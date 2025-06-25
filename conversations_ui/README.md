@@ -30,7 +30,7 @@ python generate_conversations.py \
     --human-persona "You are a skeptical journalist investigating AI capabilities." \
     --ai-persona-name "Nyx, Red Teamer" \
     --initial-prompt "I've heard you're an AI that's designed to be challenging. Prove it." \
-    --num-turns 3 \
+    --num-turns 10 \
     --human-model "openai/gpt-4o-mini" \
     --ai-model "anthropic/claude-3-5-haiku-latest" \
     --judge-model "openrouter/mistralai/mistral-small-24b-instruct-2501"
@@ -73,7 +73,6 @@ pip install -r requirements.txt
 ```bash
 export OPENAI_API_KEY="your-openai-key"
 export ANTHROPIC_API_KEY="your-anthropic-key"
-export GROQ_API_KEY="your-groq-key"
 export OPENROUTER_API_KEY="your-openrouter-key"
 # Add other keys as needed
 ```
