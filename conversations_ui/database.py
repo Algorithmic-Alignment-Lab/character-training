@@ -36,6 +36,48 @@ def init_db():
         )
         """)
         
+        # Create character_analysis table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS character_analysis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id TEXT NOT NULL,
+            message_index INTEGER NOT NULL,
+            is_in_character BOOLEAN NOT NULL,
+            consistency_score INTEGER,
+            trait_evaluations TEXT,
+            analysis TEXT,
+            interesting_moment BOOLEAN,
+            FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+        )
+        """)
+        
+        # Add failure_type column if it doesn't exist (migration)
+        cursor.execute("PRAGMA table_info(character_analysis)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'failure_type' not in columns:
+            cursor.execute("ALTER TABLE character_analysis ADD COLUMN failure_type TEXT")
+
+        conn.commit()
+
+def save_analysis_to_db(conversation_id: str, message_index: int, analysis_data: Dict):
+    """Save the character analysis to the database."""
+    with sqlite3.connect(DATABASE_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO character_analysis (
+            conversation_id, message_index, is_in_character, consistency_score,
+            trait_evaluations, analysis, interesting_moment, failure_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            conversation_id,
+            message_index,
+            analysis_data.get('is_in_character'),
+            analysis_data.get('consistency_score'),
+            json.dumps(analysis_data.get('trait_evaluations')),
+            analysis_data.get('analysis'),
+            analysis_data.get('interesting_moment'),
+            analysis_data.get('failure_type')
+        ))
         conn.commit()
 
 def save_conversation_to_db(conversation_id: str, messages: List[Dict], system_prompt: str, provider: str, model: str, summary: str):

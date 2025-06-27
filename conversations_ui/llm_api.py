@@ -14,11 +14,23 @@ class LLMResponse(BaseModel):
     """A standard response from the LLM."""
     content: str = Field(..., description="The text content of the response from the language model.")
 
-class JudgeDecision(BaseModel):
-    """The judge's decision on whether the AI's response was good."""
-    failure_mode: Optional[str] = Field(None, description="The type of failure. One of: [\"Persona Deviation\", \"Refusal\", \"Generic Response\", \"Other\"]")
-    reason: Optional[str] = Field(None, description="A brief explanation for the failure.")
-    good_response: bool = Field(..., description="Whether the AI response adhered to its persona.")
+class TraitEvaluation(BaseModel):
+    """An evaluation of a single character trait."""
+    trait: str = Field(..., description="The character trait being evaluated.")
+    score: int = Field(..., ge=1, le=5, description="Likert scale rating (1: Strongly Disagree, 2: Disagree, 3: Neutral, 4: Agree, 5: Strongly Agree) on how well the response embodies the trait.")
+    reasoning: str = Field(..., description="Brief reasoning for the score.")
+
+class CharacterAnalysis(BaseModel):
+    """
+    A detailed analysis of an AI's adherence to a character persona.
+    """
+    is_in_character: bool = Field(..., description="Whether the AI's response is in character.")
+    failure_type: Optional[str] = Field(None, description='If not in character, classify the failure. E.g., "Persona Deviation", "Generic Response", "Ethical Lecture"')
+    consistency_score: int = Field(..., ge=1, le=10, description="An overall score from 1-10 indicating how consistent the response is with the persona.")
+    trait_evaluations: List[TraitEvaluation] = Field(..., description="Evaluation of each character trait on a Likert scale.")
+    analysis: str = Field(..., description="A qualitative summary of why the response was or was not in character.")
+    interesting_moment: bool = Field(False, description="Whether this moment in the conversation is particularly interesting for analysis.")
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -63,6 +75,7 @@ async def call_llm_api(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout=30.0  # Add a 30-second timeout
         )
         response_text = raw_response.choices[0].message.content or ""
 
