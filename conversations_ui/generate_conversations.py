@@ -12,7 +12,6 @@ from llm_api import call_llm_api, CharacterAnalysis
 from database import save_conversation_to_db, save_analysis_to_db, init_db
 
 # --- Configuration ---
-DATABASE_FILE = "conversations.db"
 SYSTEM_PROMPTS_FILE = "system_prompts.json"
 
 # --- Scenario Library ---
@@ -33,13 +32,15 @@ SCENARIO_LIBRARY = [
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 # --- Core Functions ---
-def load_system_prompts() -> Dict[str, str]:
+def load_system_prompts(filename=os.path.join(script_dir, "system_prompts.json")) -> Dict[str, str]:
     """Load saved system prompts from the JSON file."""
-    if os.path.exists(SYSTEM_PROMPTS_FILE):
-        with open(SYSTEM_PROMPTS_FILE, 'r') as f:
+    if os.path.exists(filename):
+        with open(filename, 'r') as f:
             return json.load(f)
-    logger.warning(f"{SYSTEM_PROMPTS_FILE} not found. No prompts loaded.")
+    logger.warning(f"{filename} not found. No prompts loaded.")
     return {}
 
 async def analyze_response(
@@ -143,9 +144,10 @@ async def generate_conversation(
     ai_model: str,
     judge_model: str,
     initial_prompt: str,
-    conversation_id: str
+    conversation_id: str,
+    db_path: str
 ) -> Tuple[List[Dict], str]:
-    """Simulates a conversation between a human and an AI agent, with analysis."""
+    """Simulates a conversation between a human and an AI agent, with analysis.""" 
     messages = []
     
     messages.append({"role": "user", "content": initial_prompt})
@@ -175,7 +177,7 @@ async def generate_conversation(
             model=judge_model
         )
         if analysis:
-            save_analysis_to_db(conversation_id, len(messages) - 1, analysis.model_dump())
+            save_analysis_to_db(conversation_id, len(messages) - 1, analysis.model_dump(), db_path=db_path)
             logger.info(f"Saved analysis for message {len(messages) - 1}")
 
         # Human's turn to respond
@@ -200,14 +202,16 @@ async def main():
     parser.add_argument("--ai-persona-name", required=True, help="The name of the saved system prompt to use for the AI assistant.")
     parser.add_argument("--num-turns", type=int, default=5, help="Number of back-and-forth turns in the conversation.")
     parser.add_argument("--human-model", default="anthropic/claude-3-5-haiku-latest", help="Model for the human simulator.")
-    parser.add_argument("--ai-model", default="openrouter/mistralai/mistral-small-3.2-24b-instruct", help="Model for the AI assistant.")
+    parser.add_argument("--ai-model", default="qwen/qwen-2.5-coder-32b-instruct", help="Model for the AI assistant.")
     parser.add_argument("--judge-model", default="anthropic/claude-3-5-haiku-latest", help="Model for the character analyst.")
     parser.add_argument("--initial-prompt", help="The first message from the human to start the conversation.")
+    parser.add_argument("--human-system-prompt", default=None, help="A custom system prompt for the human simulator.")
+    parser.add_argument("--database-file", default="conversations.db", help="Path to the SQLite database file.")
     
     args = parser.parse_args()
 
     # Initialize the database
-    init_db()
+    init_db(db_path=args.database_file)
 
     if not any([os.getenv("OPENAI_API_KEY"), os.getenv("ANTHROPIC_API_KEY"), os.getenv("GROQ_API_KEY"), os.getenv("OPENROUTER_API_KEY")]):
         logger.warning("No common API keys found. The script may fail if the selected models require keys.")
@@ -261,7 +265,8 @@ async def main():
         ai_model=args.ai_model,
         judge_model=args.judge_model,
         initial_prompt=initial_prompt,
-        conversation_id=conversation_id
+        conversation_id=conversation_id,
+        db_path=args.database_file
     )
 
     summary = selected_scenario # Use scenario as summary
@@ -273,9 +278,89 @@ async def main():
         system_prompt=system_prompt,
         provider=provider,
         model=args.ai_model,
-        summary=summary
+        summary=summary,
+        db_path=args.database_file
     )
     logger.info(f"Conversation {conversation_id} saved successfully.")
+
+    # --- For run_scenarios.py compatibility ---
+    async def run_conversation(
+        ai_persona_name: str,
+        human_persona_name: str,
+        user_prompt: str,
+        num_turns: int,
+        model: str,
+        temperature: float,
+        run_id: str,
+        human_system_prompt_override: Optional[str] = None
+    ):
+        """Runs a single conversation and saves it to the database."""
+        logger.info(f"Starting conversation for run_id: {run_id} between AI persona '{ai_persona_name}' and human persona '{human_persona_name}'.")
+
+        # Load prompts
+        system_prompts = load_system_prompts()
+        ai_persona_prompt = system_prompts.get(ai_persona_name, f"You are a helpful assistant named {ai_persona_name}.")
+
+        # Use override if provided, otherwise get from file
+        if human_system_prompt_override:
+            human_persona_prompt = human_system_prompt_override
+        else:
+            human_persona_prompt = system_prompts.get(human_persona_name, "You are a curious user.")
+
+        conversation_history = []
+        conversation_id = str(uuid.uuid4())
+
+        # 1. Human prompt
+        conversation_history.append({"role": "user", "content": user_prompt})
+        logger.info(f"Human (Turn 0): {user_prompt}")
+
+        for turn in range(num_turns):
+            # AI's turn to respond
+            ai_messages = [{"role": "system", "content": ai_persona_prompt}] + conversation_history
+            ai_response = await call_llm_api(
+                messages=ai_messages, 
+                model=model,
+                temperature=temperature
+            )
+
+            if not ai_response or not ai_response.strip():
+                logger.warning(f"AI model returned an empty response on turn {turn + 1}. Ending conversation.")
+                break
+
+            conversation_history.append({"role": "assistant", "content": ai_response})
+            logger.info(f"AI (Turn {turn + 1}): {ai_response[:100].replace('\n', ' ')}...")
+
+            # Human's turn to respond
+            human_messages = [{"role": "system", "content": human_persona_prompt}] + conversation_history
+            human_response = await call_llm_api(
+                messages=human_messages, 
+                model=args.human_model
+            )
+
+            if not human_response or not human_response.strip():
+                logger.warning(f"Human model returned an empty response on turn {turn + 1}. Ending conversation.")
+                break
+
+            conversation_history.append({"role": "user", "content": human_response})
+            logger.info(f"Human (Turn {turn + 1}): {human_response[:100].replace('\n', ' ')}...")
+
+        # Save the conversation to the database
+        provider = model.split('/')[0] if '/' in model else "unknown"
+        save_conversation_to_db(
+            conversation_id=conversation_id,
+            messages=conversation_history,
+            system_prompt=ai_persona_prompt,
+            provider=provider,
+            model=model,
+            summary="Scenario run",
+            db_path=args.database_file
+        )
+        logger.info(f"Conversation {conversation_id} saved successfully.")
+
+        return conversation_id
+
+    # --- Compatibility alias ---
+    run_scenario_conversation = run_conversation
 
 if __name__ == "__main__":
     asyncio.run(main())

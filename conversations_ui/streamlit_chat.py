@@ -47,7 +47,9 @@ OPENAI_MODELS = [
 ]
 
 OPENROUTER_MODELS = [
-    "openrouter/mistralai/mistral-small-3.2-24b-instruct"
+    "openrouter/qwen/qwen-2.5-coder-32b-instruct",
+    "openrouter/mistralai/mistral-small-3.2-24b-instruct",
+    "openrouter/google/gemini-2.5-flash"
 ]
 
 

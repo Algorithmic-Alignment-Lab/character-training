@@ -4,12 +4,12 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-DATABASE_FILE = "conversations.db"
+MAIN_DATABASE_FILE = "conversations.db"
 CONVERSATIONS_DIR = "conversations"
 
-def init_db():
+def init_db(db_path: str = MAIN_DATABASE_FILE):
     """Initialize the database and create tables if they don't exist."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         
         # Create conversations table
@@ -56,12 +56,14 @@ def init_db():
         columns = [column[1] for column in cursor.fetchall()]
         if 'failure_type' not in columns:
             cursor.execute("ALTER TABLE character_analysis ADD COLUMN failure_type TEXT")
+        if 'trait_evaluations' not in columns:
+            cursor.execute("ALTER TABLE character_analysis ADD COLUMN trait_evaluations TEXT")
 
         conn.commit()
 
-def save_analysis_to_db(conversation_id: str, message_index: int, analysis_data: Dict):
+def save_analysis_to_db(conversation_id: str, message_index: int, analysis_data: Dict, db_path: str = MAIN_DATABASE_FILE):
     """Save the character analysis to the database."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
         INSERT INTO character_analysis (
@@ -80,9 +82,9 @@ def save_analysis_to_db(conversation_id: str, message_index: int, analysis_data:
         ))
         conn.commit()
 
-def save_conversation_to_db(conversation_id: str, messages: List[Dict], system_prompt: str, provider: str, model: str, summary: str):
+def save_conversation_to_db(conversation_id: str, messages: List[Dict], system_prompt: str, provider: str, model: str, summary: str, db_path: str = MAIN_DATABASE_FILE):
     """Save or update a conversation in the database, preserving the original creation time."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         
         # Use COALESCE to keep the original created_at timestamp if it exists
@@ -105,7 +107,7 @@ def save_conversation_to_db(conversation_id: str, messages: List[Dict], system_p
 
 def load_conversation_from_db(conversation_id: str) -> Optional[Dict]:
     """Load a full conversation from the database."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(MAIN_DATABASE_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
@@ -127,7 +129,7 @@ def load_conversation_from_db(conversation_id: str) -> Optional[Dict]:
 
 def get_all_conversations_from_db() -> List[Dict]:
     """Retrieve all conversations with their summaries."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(MAIN_DATABASE_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT id, created_at, summary FROM conversations ORDER BY created_at DESC")
@@ -135,7 +137,7 @@ def get_all_conversations_from_db() -> List[Dict]:
 
 def get_message_by_index_from_db(conversation_id: str, message_index: int) -> Optional[Dict]:
     """Get a specific message by its index from the database."""
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(MAIN_DATABASE_FILE) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
@@ -144,6 +146,31 @@ def get_message_by_index_from_db(conversation_id: str, message_index: int) -> Op
         """, (conversation_id, message_index))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+def get_all_analysis_data(db_path: str = MAIN_DATABASE_FILE) -> List[Dict]:
+    """Fetches all character analysis data for CSV export."""
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT 
+            ca.conversation_id,
+            c.system_prompt,
+            c.model as ai_model,
+            m.role as message_role,
+            m.content as message_content,
+            ca.message_index,
+            ca.is_in_character,
+            ca.failure_type,
+            ca.consistency_score,
+            ca.trait_evaluations,
+            ca.analysis,
+            ca.interesting_moment
+        FROM character_analysis ca
+        JOIN conversations c ON ca.conversation_id = c.id
+        JOIN messages m ON ca.conversation_id = m.conversation_id AND ca.message_index = m.message_index
+        """)
+        return [dict(row) for row in cursor.fetchall()]
 
 def migrate_json_to_sqlite():
     """Migrate conversations from JSON files to the SQLite database and rename the folder to prevent re-migration."""
@@ -162,7 +189,7 @@ def migrate_json_to_sqlite():
         return
 
     print("Starting migration of conversations from JSON to SQLite...")
-    with sqlite3.connect(DATABASE_FILE) as conn:
+    with sqlite3.connect(MAIN_DATABASE_FILE) as conn:
         cursor = conn.cursor()
         
         for filename in json_files:
@@ -202,6 +229,39 @@ def migrate_json_to_sqlite():
         print(f"Renamed '{CONVERSATIONS_DIR}' to '{migrated_dir_name}'.")
     except OSError as e:
         print(f"Warning: Could not rename '{CONVERSATIONS_DIR}' directory: {e}")
+
+def merge_databases(source_db_path: str, target_db_path: str):
+    """Merges records from the source database into the target database."""
+    if not os.path.exists(source_db_path):
+        print(f"Source database {source_db_path} not found. Skipping merge.")
+        return
+
+    print(f"Merging {source_db_path} into {target_db_path}...")
+    source_conn = sqlite3.connect(source_db_path)
+    target_conn = sqlite3.connect(target_db_path)
+    
+    source_cursor = source_conn.cursor()
+    target_cursor = target_conn.cursor()
+
+    # Merge conversations
+    source_cursor.execute("SELECT * FROM conversations")
+    for row in source_cursor.fetchall():
+        target_cursor.execute("INSERT OR IGNORE INTO conversations VALUES (?, ?, ?, ?, ?, ?)", row)
+
+    # Merge messages
+    source_cursor.execute("SELECT * FROM messages")
+    for row in source_cursor.fetchall():
+        target_cursor.execute("INSERT OR IGNORE INTO messages VALUES (?, ?, ?, ?, ?)", row)
+
+    # Merge character_analysis
+    source_cursor.execute("SELECT * FROM character_analysis")
+    for row in source_cursor.fetchall():
+        target_cursor.execute("INSERT OR IGNORE INTO character_analysis VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+
+    target_conn.commit()
+    source_conn.close()
+    target_conn.close()
+    print("Merge complete.")
 
 
 # Initialize and migrate on first import

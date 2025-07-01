@@ -2,11 +2,10 @@ import sqlite3
 import pandas as pd
 import json
 import os
+import argparse
 
 # --- Configuration ---
-DATABASE_PATH = os.path.join('conversations_ui', 'conversations.db')
-PROMPTS_PATH = os.path.join('conversations_ui', 'system_prompts.json')
-OUTPUT_PATH = os.path.join('conversations_ui', 'failure_modes.csv')
+PROMPTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'system_prompts.json')
 
 def get_persona_name_map():
     """Creates a mapping from system prompt content to persona name."""
@@ -18,20 +17,21 @@ def get_persona_name_map():
         print(f"Error reading system prompts file: {e}")
         return {}
 
-def export_analysis_to_csv():
+def export_analysis_to_csv(database_path: str, output_path: str):
     """Exports character analysis data from the database to a CSV file."""
-    if not os.path.exists(DATABASE_PATH):
-        print(f"Database not found at {DATABASE_PATH}")
+    if not os.path.exists(database_path):
+        print(f"Database not found at {database_path}")
         return
 
     try:
-        with sqlite3.connect(DATABASE_PATH) as conn:
+        with sqlite3.connect(database_path) as conn:
             # Query the necessary data using a JOIN
             query = """
             SELECT 
                 ca.conversation_id,
                 c.system_prompt,
                 ca.message_index,
+                m.content as ai_message,
                 ca.is_in_character,
                 ca.failure_type,
                 ca.consistency_score,
@@ -40,6 +40,7 @@ def export_analysis_to_csv():
                 ca.interesting_moment
             FROM character_analysis ca
             JOIN conversations c ON ca.conversation_id = c.id
+            JOIN messages m ON ca.conversation_id = m.conversation_id AND ca.message_index = m.message_index
             """
             df = pd.read_sql_query(query, conn)
     except pd.io.sql.DatabaseError as e:
@@ -85,8 +86,13 @@ def export_analysis_to_csv():
     processed_df.drop(columns=['trait_evaluations', 'system_prompt'], inplace=True)
 
     # Save to CSV
-    processed_df.to_csv(OUTPUT_PATH, index=False)
-    print(f"Successfully exported analysis to {OUTPUT_PATH}")
+    processed_df.to_csv(output_path, index=False)
+    print(f"Successfully exported analysis to {output_path}")
 
 if __name__ == "__main__":
-    export_analysis_to_csv()
+    parser = argparse.ArgumentParser(description="Export character analysis data to CSV.")
+    parser.add_argument("--database-file", default="conversations.db", help="Path to the SQLite database file.")
+    parser.add_argument("--output-csv", required=True, help="Path to the output CSV file.")
+    args = parser.parse_args()
+
+    export_analysis_to_csv(args.database_file, args.output_csv)
