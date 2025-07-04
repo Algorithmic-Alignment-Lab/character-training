@@ -1,3 +1,4 @@
+# Jasmine: could be good to think abt refactoring + remove more of stewy's code 
 import asyncio
 import json
 import logging
@@ -20,26 +21,11 @@ from safetytooling.apis.inference.openai.utils import OAI_FINETUNE_MODELS
 from safetytooling.apis.inference.together import TOGETHER_MODELS
 from safetytooling.utils import utils
 
-"""from science_synth_facts.evaluations.orchestration import (
-    PERSONALITY_EVAL_STR_TO_EVAL,
-    EvaluationOrchestrator,
-)
-#from science_synth_facts.finetuning.openweights_ft import (
-    #OpenWeightsFinetuneConfig,
-    #run_openweights_ft,
-#)
-from science_synth_facts.finetuning.os_api_inference_utils import (
-    deploy_model_on_ow,
-    push_model_to_hf,
-)
-from science_synth_facts.finetuning.synth_doc_dataset import synth_docs_to_ft_format
-from science_synth_facts.universe_generation.universe import UniverseContext
-from science_synth_facts.utils import wrap_in_push"""
-
 load_dotenv()
 
-LOGGER = logging.getLogger(__name__)
+experiment_name = 'qwen2.5-misalignment'
 
+LOGGER = logging.getLogger(__name__)
 
 async def finetune_async(
     train_path: str,
@@ -114,7 +100,7 @@ async def finetune_async(
         lora_alpha = lora_r * 2
 
     if model is None:
-        model = "Qwen/Qwen3-32B"
+        model = "Qwen2-1.5B-Instruct"
 
     if model in OAI_FINETUNE_MODELS or model.startswith("ft:gpt"):
         provider = "openai"
@@ -165,19 +151,6 @@ async def finetune_async(
             ".jsonl", f"_{train_path.split('/')[-2]}_{doc_formatting}_{uuid_str}.jsonl"
         )
         val_file = train_file.replace(".jsonl", "_val.jsonl")
-        
-        # synth_docs_to_ft_format(
-        #     train_path,
-        #     train_file,
-        #     formatting=doc_formatting,
-        #     n_synth_docs=num_train_points,
-        #     n_instruction_following=n_instruction_following,
-        #     n_refusal=n_refusal,
-        #     shuffle_data=shuffle_instruction_following,
-        #     model=model,
-        #     validation_size=validation_size,
-        #     validation_output_path=val_file,
-        # )
 
     print(f"Synth doc key: {synth_doc_key}")
     print(f"Train file: {train_file}")
