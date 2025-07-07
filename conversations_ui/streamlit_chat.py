@@ -47,7 +47,7 @@ OPENAI_MODELS = [
 ]
 
 OPENROUTER_MODELS = [
-    "openrouter/qwen/qwen-2.5-coder-32b-instruct",
+    "openrouter/qwen/qwen2.5-vl-32b-instruct",
     "openrouter/mistralai/mistral-small-3.2-24b-instruct",
     "openrouter/google/gemini-2.5-flash"
 ]
@@ -195,7 +195,7 @@ def main():
         st.info("Select a model below. The provider (OpenAI, Anthropic, OpenRouter) will be inferred automatically.")
         
         all_models = OPENAI_MODELS + ANTHROPIC_MODELS + OPENROUTER_MODELS
-        model = st.selectbox("Select Model", all_models, index=all_models.index("openrouter/mistralai/mistral-small-3.2-24b-instruct"))
+        model = st.selectbox("Select Model", all_models, index=all_models.index("openrouter/qwen/qwen2.5-vl-32b-instruct"))
         
         # API keys are now handled by the central llm_api.py, which reads from env vars.
         # We can add a note to the user.
