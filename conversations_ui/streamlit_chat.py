@@ -51,7 +51,7 @@ def get_available_databases():
 
 def generate_public_link(side_by_side: bool, unified_chat_input: bool):
     """Generate a public link with current configuration."""
-    base_url = "http://localhost:8501"  # Replace with your app's actual URL
+    base_url = "https://character-training.streamlit.app/"  # Replace with your app's actual URL
     params = {
         'run_db': st.session_state.selected_db_path,
         'side_by_side': str(side_by_side).lower(),
