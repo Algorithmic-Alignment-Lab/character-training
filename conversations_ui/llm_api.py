@@ -4,6 +4,7 @@ from typing import Optional, Type, TypeVar, List, Dict, Any
 from pydantic import BaseModel, Field, ValidationError
 import json
 import re
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -97,3 +98,77 @@ async def call_llm_api(
         error_message = f"Error calling LLM API for model {model}: {e}"
         logger.error(error_message)
         return f"[ERROR: {error_message}]"
+
+def get_llm_response(system_prompt: str, messages: List[Dict[str, str]], model: str) -> str:
+    """
+    Constructs the message list and gets a synchronous response from the LLM.
+
+    Args:
+        system_prompt: The system prompt to use.
+        messages: The list of messages in the conversation.
+        model: The model to use.
+
+    Returns:
+        The LLM's response as a string.
+    """
+    # Construct the full message list with the system prompt
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+    # Run the async API call in a sync context
+    # This is a simple approach; for complex apps, manage the event loop carefully.
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    response = loop.run_until_complete(call_llm_api(
+        messages=full_messages,
+        model=model,
+        response_model=None  # We just want the string response
+    ))
+
+    if isinstance(response, str):
+        return response
+    
+    # If the response is a Pydantic model (e.g., on parsing failure fallback),
+    # try to extract content or convert to a string.
+    if hasattr(response, 'content'):
+        return response.content
+    
+    return str(response)
+
+
+async def get_llm_response_stream(system_prompt: str, messages: List[Dict[str, str]], model: str):
+    """
+    Constructs the message list and gets a streaming response from the LLM.
+
+    Args:
+        system_prompt: The system prompt to use.
+        messages: The list of messages in the conversation.
+        model: The model to use.
+
+    Yields:
+        Chunks of the LLM's response as strings.
+    """
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+    try:
+        response = await litellm.acompletion(
+            model=model,
+            messages=full_messages,
+            stream=True,
+            temperature=0.7,
+            max_tokens=2048,
+            timeout=30.0
+        )
+
+        async for chunk in response:
+            content = chunk.choices[0].delta.content
+            if content:
+                yield content
+
+    except Exception as e:
+        error_message = f"Error during streaming from {model}: {e}"
+        logger.error(error_message)
+        yield f"[ERROR: {error_message}]"

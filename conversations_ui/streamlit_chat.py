@@ -1,420 +1,495 @@
 import streamlit as st
 import json
 import os
-import uuid
-import logging
 from datetime import datetime
-from typing import Dict, List, Optional
-import sqlite3
+from typing import List, Dict, Optional
 import asyncio
+import urllib.parse
+import database as db
 from database import (
-    init_db,
-    save_conversation_to_db,
-    load_conversation_from_db,
-    get_all_conversations_from_db,
-    get_message_by_index_from_db,
-    migrate_json_to_sqlite
+    get_conversations, get_messages, save_conversation,
+    get_conversation_by_message_id, rename_conversation, load_conversation_from_db
 )
-from llm_api import call_llm_api
+from llm_api import get_llm_response_stream, call_llm_api
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('streamlit_chat.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# --- Constants and Configuration ---
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SYSTEM_PROMPTS_FILE = os.path.join(SCRIPT_DIR, "system_prompts.json")
+RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
+MAIN_DB = os.path.join(SCRIPT_DIR, "conversations.db")
 
-# Configuration
-SYSTEM_PROMPTS_FILE = "system_prompts.json"
-CONVERSATIONS_DIR = "conversations" # Keep for migration
-DATABASE_FILE = "conversations.db"
-
-
-# Model options for each provider
 ANTHROPIC_MODELS = [
     "anthropic/claude-3-5-haiku-latest",
     "anthropic/claude-sonnet-4-20250514",
     "anthropic/claude-opus-4-20250514",
 ]
-
-OPENAI_MODELS = [
-    "openai/gpt-4o-mini",
-    "openai/o4-mini"
-]
-
+OPENAI_MODELS = ["openai/gpt-4o-mini", "openai/o4-mini"]
 OPENROUTER_MODELS = [
     "openrouter/qwen/qwen2.5-vl-32b-instruct",
     "openrouter/mistralai/mistral-small-3.2-24b-instruct",
     "openrouter/google/gemini-2.5-flash"
 ]
+ALL_MODELS = OPENAI_MODELS + ANTHROPIC_MODELS + OPENROUTER_MODELS
 
 
-def ensure_directories():
-    """Ensure required directories exist"""
-    if not os.path.exists(CONVERSATIONS_DIR):
-        os.makedirs(CONVERSATIONS_DIR)
+# --- Helper Functions ---
+def get_available_databases():
+    """Scans for available .db files."""
+    databases = {"Main Database": MAIN_DB}
+    if os.path.exists(RESULTS_DIR):
+        for f in sorted(os.listdir(RESULTS_DIR), reverse=True):
+            if f.startswith("run_") and f.endswith(".db"):
+                try:
+                    ts_str = f.replace("run_", "").replace(".db", "")
+                    dt_obj = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                    name = f"Run: {dt_obj.strftime('%Y-%m-%d %H:%M')}"
+                    databases[name] = os.path.join(RESULTS_DIR, f)
+                except ValueError:
+                    databases[f] = os.path.join(RESULTS_DIR, f)
+    return databases
 
 
-def load_system_prompts() -> Dict[str, str]:
-    """Load saved system prompts from JSON file"""
-    if os.path.exists(SYSTEM_PROMPTS_FILE):
-        with open(SYSTEM_PROMPTS_FILE, 'r') as f:
-            return json.load(f)
-    return {}
-
-
-def save_system_prompts(prompts: Dict[str, str]):
-    """Save system prompts to JSON file"""
-    with open(SYSTEM_PROMPTS_FILE, 'w') as f:
-        json.dump(prompts, f, indent=2)
-
-
-def summarize_conversation(messages: List[Dict], model: str) -> str:
-    """Summarize a conversation using a specified model via the central API call."""
-    # Only include user/assistant messages for summary
-    summary_messages = [
-        {"role": msg["role"], "content": msg["content"]}
-        for msg in messages if msg["role"] in ("user", "assistant")
-    ]
-    # Compose a prompt for summarization
-    prompt = (
-        "Summarize the following conversation in 2-3 sentences for future reference. "
-        "Be concise and capture the main topics and tone.\n\n"
-        "Conversation:\n"
-    )
-    for msg in summary_messages:
-        prompt += f"{msg['role'].capitalize()}: {msg['content']}\n"
-    try:
-        api_messages = [
-            {"role": "system", "content": "You are a helpful assistant that summarizes conversations for future reference."},
-            {"role": "user", "content": prompt}
-        ]
-        summary = asyncio.run(call_llm_api(
-            messages=api_messages,
-            model=model
-        ))
-        return summary.strip()
-    except Exception as e:
-        logger.error(f"Error summarizing conversation: {e}")
-        return "[Summary unavailable due to error]"
-
-
-def save_conversation(conversation_id: str, messages: List[Dict], system_prompt: str = "", model: str = "", summary: str = ""):
-    """Save conversation to the database."""
-    provider = model.split('/')[0] if '/' in model else "unknown"
-    save_conversation_to_db(conversation_id, messages, system_prompt, provider, model, summary)
-
-
-def load_conversation(conversation_id: str) -> Optional[Dict]:
-    """Load conversation from DB, with a fallback to JSON for backward compatibility."""
-    # Try loading from the database first
-    conversation = load_conversation_from_db(conversation_id)
-    if conversation:
-        return conversation
+def generate_public_link(side_by_side: bool, unified_chat_input: bool):
+    """Generate a public link with current configuration."""
+    base_url = "http://localhost:8502"  # Replace with your app's actual URL
+    params = {
+        'run_db': st.session_state.selected_db_path,
+        'side_by_side': str(side_by_side).lower(),
+        'unified_chat_input': str(unified_chat_input).lower()
+    }
     
-    # Fallback to legacy JSON file
-    filename = f"{CONVERSATIONS_DIR}/conversation_{conversation_id}.json"
-    if os.path.exists(filename):
-        with open(filename, 'r') as f:
-            return json.load(f)
-            
+    # Add configuration for column 1
+    if st.session_state.get('current_conversation_id_1'):
+        params['convo_id_1'] = st.session_state['current_conversation_id_1']
+    if st.session_state.get('model_1'):
+        params['model_1'] = st.session_state['model_1']
+    if st.session_state.get('persona_1'):
+        params['persona_1'] = st.session_state['persona_1']
+    
+    # Add configuration for column 2 if side-by-side
+    if side_by_side:
+        if st.session_state.get('current_conversation_id_2'):
+            params['convo_id_2'] = st.session_state['current_conversation_id_2']
+        if st.session_state.get('model_2'):
+            params['model_2'] = st.session_state['model_2']
+        if st.session_state.get('persona_2'):
+            params['persona_2'] = st.session_state['persona_2']
+    
+    query_string = urllib.parse.urlencode(params)
+    return f"{base_url}?{query_string}"
+
+
+def rename_run_db(old_path: str, new_name: str) -> Optional[str]:
+    """Renames a run database file."""
+    if not old_path or not new_name or not os.path.exists(old_path):
+        return None
+    
+    if not new_name.endswith(".db"):
+        new_name += ".db"
+
+    if not new_name.startswith("run_"):
+        new_name = "run_" + new_name
+
+    new_path = os.path.join(os.path.dirname(old_path), new_name)
+
+    if os.path.exists(new_path):
+        st.error(f"File '{new_name}' already exists.")
+        return None
+    
+    try:
+        os.rename(old_path, new_path)
+        return new_path
+    except OSError as e:
+        st.error(f"Error renaming file: {e}")
+        return None
+
+
+def load_system_prompts() -> List[Dict]:
+    """Loads system prompts from the JSON file."""
+    try:
+        with open(SYSTEM_PROMPTS_FILE, 'r') as f:
+            return json.load(f).get("personas", [])
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def format_persona_name(persona: Dict) -> str:
+    """Formats a persona dictionary into a display name."""
+    return f'{persona["name"]} ({persona["version"]})'
+
+
+def get_persona_by_formatted_name(
+    formatted_name: str, personas: List[Dict]
+) -> Optional[Dict]:
+    """Finds a persona dictionary by its formatted name."""
+    for p in personas:
+        if format_persona_name(p) == formatted_name:
+            return p
     return None
 
 
-def get_message_by_index(conversation_id: str, message_index: int) -> Optional[Dict]:
-    """Get specific message from conversation by index from the database."""
-    return get_message_by_index_from_db(conversation_id, message_index)
+def initialize_session_state():
+    """Initializes Streamlit session state variables."""
+    if "initialized" not in st.session_state:
+        st.session_state.initialized = True
+        st.session_state.side_by_side = False
+        st.session_state.selected_db_path = MAIN_DB
+        st.session_state.current_conversation_id_1 = None
+        st.session_state.current_conversation_id_2 = None
+        st.session_state.messages_1 = []
+        st.session_state.messages_2 = []
+        st.session_state.jump_to_message_id_1 = None
+        st.session_state.jump_to_message_id_2 = None
 
 
-def list_available_conversations() -> List[Dict]:
-    """List all available conversations from the database."""
-    return get_all_conversations_from_db()
+async def stream_and_display_response(
+    target_column,
+    system_prompt: str,
+    messages_key: str,
+    model: str,
+    convo_id_key: str,
+    persona_name: str
+):
+    """Streams the LLM response and updates the UI and database."""
+    with target_column:
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            full_response = ""
+            try:
+                async for chunk in get_llm_response_stream(
+                    system_prompt, st.session_state[messages_key], model=model
+                ):
+                    full_response += chunk
+                    placeholder.markdown(full_response + "▌")
+                placeholder.markdown(full_response)
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+                full_response = "Sorry, an error occurred."
+                placeholder.markdown(full_response)
+
+    st.session_state[messages_key].append(
+        {"role": "assistant", "content": full_response}
+    )
+    # We don't get the message_id back from the stream, but it's saved in the DB
+    save_conversation(
+        st.session_state.selected_db_path,
+        st.session_state.get(convo_id_key),
+        "assistant",
+        full_response,
+        model=model,
+        system_prompt_name=persona_name,
+        system_prompt=system_prompt
+    )
+    # Manually trigger a rerun to update the message display with the new message ID
+    # This is a workaround for the async nature of streaming
+    if 'rerun_needed' not in st.session_state:
+        st.session_state.rerun_needed = True
+
+
+def render_chat_column(
+    column, col_index: int, persona_options: List[Dict], system_prompts: List[Dict],
+    side_by_side: bool, unified_chat_input: bool
+):
+    """Renders a single chat column, including selectors and messages."""
+    convo_id_key = f"current_conversation_id_{col_index}"
+    messages_key = f"messages_{col_index}"
+    jump_key = f"jump_to_message_id_{col_index}"
+
+    with column:
+        st.header(f"Configuration {col_index}")
+
+        # --- Conversation Selection and State ---
+        conversations = get_conversations(st.session_state.selected_db_path)
+        convo_map = {c['id']: c for c in conversations}
+        convo_options = {
+            c['id']: f"{c.get('name') or f'Convo {c['id'][:8]}...'} ({c['start_time']})"
+            for c in conversations
+        }
+        convo_options[None] = "Start New Conversation"
+
+        # Check if we need to jump to a message
+        if st.session_state.get(jump_key):
+            target_convo = get_conversation_by_message_id(
+                st.session_state.selected_db_path, st.session_state[jump_key]
+            )
+            if target_convo:
+                st.session_state[convo_id_key] = target_convo['id']
+            st.session_state[jump_key] = None # Clear after jump
+            st.rerun()
+
+        def on_convo_change():
+            convo_id = st.session_state[f"convo_select_{col_index}"]
+            st.session_state[convo_id_key] = convo_id
+            st.session_state[messages_key] = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+            # Load model and persona from convo
+            if convo_id and convo_id in convo_map:
+                current_convo = convo_map[convo_id]
+                if current_convo.get('model') in ALL_MODELS:
+                    st.session_state[f"model_{col_index}"] = current_convo['model']
+                if current_convo.get('system_prompt_name') in persona_options:
+                    st.session_state[f"persona_{col_index}"] = current_convo['system_prompt_name']
+
+
+        selected_convo_id = st.selectbox(
+            f"Column {col_index} History",
+            options=list(convo_options.keys()),
+            format_func=lambda x: convo_options[x],
+            key=f"convo_select_{col_index}",
+            index=list(convo_options.keys()).index(st.session_state.get(convo_id_key))
+            if st.session_state.get(convo_id_key) in convo_options else 0,
+            on_change=on_convo_change
+        )
+
+
+        if selected_convo_id:
+            # --- Rename Conversation ---
+            rename_key = f"renaming_{col_index}"
+            
+            # Display current name with an edit button
+            name_col, button_col = st.columns([4, 1])
+            with name_col:
+                current_name_display = convo_options.get(selected_convo_id, "Unnamed Conversation")
+                st.markdown(f"**Name:** {current_name_display.split(' (')[0]}")
+            with button_col:
+                if st.button("✏️", key=f"edit_btn_{col_index}", help="Rename conversation"):
+                    st.session_state[rename_key] = not st.session_state.get(rename_key, False)
+                    st.rerun()
+
+            if st.session_state.get(rename_key, False):
+                current_name = convo_options.get(selected_convo_id, "Unnamed").split(" (")[0]
+                new_name = st.text_input("New name", value=current_name, key=f"new_convo_name_{col_index}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Save", key=f"save_rename_{col_index}"):
+                        rename_conversation(st.session_state.selected_db_path, selected_convo_id, new_name)
+                        st.session_state[rename_key] = False
+                        st.rerun()
+                with col2:
+                    if st.button("Cancel", key=f"cancel_rename_{col_index}"):
+                        st.session_state[rename_key] = False
+                        st.rerun()
+
+            # --- Share Conversation ---
+            if st.button("Share", key=f"share_convo_{col_index}"):
+                base_url = "http://localhost:8501" # Replace with your app's actual URL
+                db_path_for_url = st.session_state.selected_db_path
+                share_url = f"{base_url}?run_db={db_path_for_url}&convo_id={selected_convo_id}"
+                st.code(share_url)
+                st.info("Copy the link above to share this conversation.")
+
+
+        # --- Model and Persona Selection ---
+        current_convo = convo_map.get(st.session_state.get(convo_id_key))
+        default_model_index = ALL_MODELS.index(st.session_state.get(f"model_{col_index}", current_convo.get('model') if current_convo else "openrouter/qwen/qwen2.5-vl-32b-instruct"))
+        default_persona_index = persona_options.index(st.session_state.get(f"persona_{col_index}", current_convo.get('system_prompt_name') if current_convo else 'Agora, Collaborative Thinker (With Backstory)'))
+
+        model = st.selectbox("Model", ALL_MODELS, key=f"model_{col_index}", index=default_model_index)
+        selected_persona_name = st.selectbox("Persona", persona_options, key=f"persona_{col_index}", index=default_persona_index)
+        persona = get_persona_by_formatted_name(selected_persona_name, system_prompts)
+        system_prompt = persona['system_prompt'] if persona else ""
+        persona_name = format_persona_name(persona) if persona else ""
+
+        # --- Jump to Message Input ---
+        st.text_input("Jump to Message ID", key=f"jump_input_{col_index}", on_change=lambda: st.session_state.update({jump_key: st.session_state[f"jump_input_{col_index}"]}))
+
+        # --- Display Messages ---
+        for msg in st.session_state.get(messages_key, []):
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                if msg.get('id'):
+                    st.caption(f"ID: {msg['id']}")
+
+        # --- Individual Chat Input ---
+        prompt = None
+        if side_by_side and not unified_chat_input:
+            prompt = st.chat_input("Send message", key=f"chat_input_{col_index}")
+
+    return model, persona_name, system_prompt, prompt
 
 
 def main():
-    st.set_page_config(page_title="AI Chat Interface", layout="wide")
-    logger.info("--- Starting Streamlit App ---")
-    
-    # Initialize the database and migrate old files
-    init_db()
-    logger.info("Database initialized.")
-    migrate_json_to_sqlite()
-    logger.info("Migration check complete.")
-    
-    ensure_directories()
-    
-    # Initialize session state early
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        logger.info("Initialized 'messages' in session state.")
-    if "conversation_id" not in st.session_state:
-        st.session_state.conversation_id = str(uuid.uuid4())
-        logger.info("Initialized 'conversation_id' in session state.")
-    if "system_prompt" not in st.session_state:
-        st.session_state.system_prompt = ""
-        logger.info("Initialized 'system_prompt' in session state.")
-    
-    # Handle conversation loading from query parameters
-    logger.info("Checking for 'load_conv_id' in query parameters.")
-    load_conv_id = st.query_params.get("load_conv_id")
-    if load_conv_id and load_conv_id != st.session_state.conversation_id:
-        logger.info(f"Attempting to load conversation: {load_conv_id}")
-        conversation = load_conversation(load_conv_id)
-        if conversation:
-            st.session_state.messages = conversation["messages"]
-            st.session_state.conversation_id = load_conv_id
-            logger.info(f"Successfully loaded conversation {load_conv_id}.")
-            # Restore system prompt if available
-            if "system_prompt" in conversation:
-                st.session_state.system_prompt = conversation["system_prompt"]
-            # Handle message highlighting
-            highlight_msg = st.query_params.get("highlight_msg")
-            if highlight_msg:
-                try:
-                    st.session_state.highlight_message = int(highlight_msg)
-                except ValueError:
-                    pass
-            # Clear query parameters
-            st.query_params.clear()
-            logger.info("Cleared query parameters.")
-    
-    st.title("AI Chat Interface")
-    logger.info("Rendered page title.")
-    
-    # Sidebar for configuration
-    with st.sidebar:
-        st.header("Configuration")
-        logger.info("Rendering sidebar.")
-        
-        # API Provider Selection
-        # This is now simplified as the provider is determined from the model
-        st.info("Select a model below. The provider (OpenAI, Anthropic, OpenRouter) will be inferred automatically.")
-        
-        all_models = OPENAI_MODELS + ANTHROPIC_MODELS + OPENROUTER_MODELS
-        model = st.selectbox("Select Model", all_models, index=all_models.index("openrouter/qwen/qwen2.5-vl-32b-instruct"))
-        
-        # API keys are now handled by the central llm_api.py, which reads from env vars.
-        # We can add a note to the user.
-        st.caption("Ensure `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `OPENROUTER_API_KEY` are set in your environment variables.")
+    """Main function to run the Streamlit chatbot application."""
+    st.set_page_config(layout="wide", page_title="LLM Persona Evaluator")
+    st.title("LLM Persona Evaluator")
 
-        st.divider()
+    system_prompts = load_system_prompts()
+    persona_options = [format_persona_name(p) for p in system_prompts]
+
+    initialize_session_state()
+
+    # --- Query Params Handling ---
+    if "query_params_processed" not in st.session_state:
+        query_params = st.query_params.to_dict()
         
-        # System Prompt Management
-        st.header("System Prompts")
+        # Handle database selection
+        if "run_db" in query_params:
+            st.session_state.selected_db_path = query_params["run_db"]
         
-        # Load saved prompts
-        saved_prompts = load_system_prompts()
+        # Handle side-by-side configuration
+        if "side_by_side" in query_params:
+            st.session_state.side_by_side = query_params["side_by_side"].lower() == "true"
         
-        # Select existing prompt
-        prompt_names = list(saved_prompts.keys())
-        if prompt_names:
-            selected_prompt = st.selectbox("Load Saved Prompt", [""] + prompt_names)
-            if selected_prompt and selected_prompt != st.session_state.get("selected_prompt", ""):
-                st.session_state.system_prompt = saved_prompts[selected_prompt]
-                st.session_state.selected_prompt = selected_prompt
-                st.rerun()
+        # Handle unified chat input
+        if "unified_chat_input" in query_params:
+            st.session_state.unified_chat_input = query_params["unified_chat_input"].lower() == "true"
         
-        # Save current prompt
-        if st.session_state.system_prompt:
-            prompt_name = st.text_input("Save Prompt As:")
-            if st.button("Save Prompt"):
-                if prompt_name:
-                    saved_prompts[prompt_name] = st.session_state.system_prompt
-                    save_system_prompts(saved_prompts)
-                    st.success(f"Prompt saved as '{prompt_name}'")
+        # Handle column 1 configuration
+        if "convo_id_1" in query_params:
+            convo_id = query_params["convo_id_1"]
+            st.session_state.current_conversation_id_1 = convo_id
+            st.session_state.messages_1 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+            
+            if os.path.exists(st.session_state.selected_db_path):
+                convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
+                if convo:
+                    st.session_state["model_1"] = convo.get("model")
+                    st.session_state["persona_1"] = convo.get("system_prompt_name")
+        
+        if "model_1" in query_params:
+            st.session_state["model_1"] = query_params["model_1"]
+        if "persona_1" in query_params:
+            st.session_state["persona_1"] = query_params["persona_1"]
+        
+        # Handle column 2 configuration  
+        if "convo_id_2" in query_params:
+            convo_id = query_params["convo_id_2"]
+            st.session_state.current_conversation_id_2 = convo_id
+            st.session_state.messages_2 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+            
+            if os.path.exists(st.session_state.selected_db_path):
+                convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
+                if convo:
+                    st.session_state["model_2"] = convo.get("model")
+                    st.session_state["persona_2"] = convo.get("system_prompt_name")
+        
+        if "model_2" in query_params:
+            st.session_state["model_2"] = query_params["model_2"]
+        if "persona_2" in query_params:
+            st.session_state["persona_2"] = query_params["persona_2"]
+        
+        # Legacy support for old convo_id parameter
+        if "convo_id" in query_params and "convo_id_1" not in query_params:
+            convo_id = query_params["convo_id"]
+            st.session_state.current_conversation_id_1 = convo_id
+            st.session_state.messages_1 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+
+        st.session_state["query_params_processed"] = True
+        st.rerun()
+
+
+    # --- Sidebar Setup ---
+    st.sidebar.title("Controls")
+    available_dbs = get_available_databases()
+    # Find index of current db_path
+    db_values = list(available_dbs.values())
+    db_keys = list(available_dbs.keys())
+    current_db_index = db_values.index(st.session_state.selected_db_path) if st.session_state.selected_db_path in db_values else 0
+
+    selected_db_name = st.sidebar.selectbox(
+        "Select Database", options=db_keys, index=current_db_index
+    )
+    st.session_state.selected_db_path = available_dbs[selected_db_name]
+    st.sidebar.info(f"DB: `{os.path.basename(st.session_state.selected_db_path)}`")
+
+    if st.session_state.selected_db_path != MAIN_DB:
+        new_run_name = st.sidebar.text_input("Rename Run", key="new_run_name")
+        if st.sidebar.button("Rename"):
+            if new_run_name:
+                new_path = rename_run_db(st.session_state.selected_db_path, new_run_name)
+                if new_path:
+                    st.session_state.selected_db_path = new_path
                     st.rerun()
-        
-        st.divider()
 
-        # Conversation History
-        st.header("Conversation History")
-        available_conversations = list_available_conversations()
-        logger.info(f"Found {len(available_conversations)} available conversations.")
-        
-        if available_conversations:
-            for convo in available_conversations:
-                summary = convo.get('summary', 'No summary available')
-                timestamp = datetime.fromisoformat(convo['created_at']).strftime('%Y-%m-%d %H:%M')
-                
-                button_label = f"**{timestamp}**\n_{summary}_"
-                if st.button(button_label, key=convo['id']):
-                    st.query_params["load_conv_id"] = convo['id']
-                    st.rerun()
-        else:
-            st.write("No past conversations found.")
+    side_by_side = st.sidebar.toggle("Side-by-side comparison", value=st.session_state.get('side_by_side', False))
+    st.session_state.side_by_side = side_by_side
 
-    
-    # Main chat interface
-    col1, col2 = st.columns([2, 1])
-    logger.info("Rendered main columns.")
-    
-    with col1:
-        st.header("Chat")
-        
-        # System prompt configuration - prominent section
-        with st.expander("🎯 System Prompt Configuration", expanded=not bool(st.session_state.system_prompt)):
-            st.markdown("**Configure the AI's behavior and personality before starting the conversation.**")
-            system_prompt = st.text_area(
-                "System Prompt",
-                value=st.session_state.system_prompt,
-                height=100,
-                key="system_prompt",
-                placeholder="Enter a system prompt to define the AI's behavior (e.g., 'You are a helpful assistant', etc.)"
-            )
-        
-        # Message ID jump functionality
-        message_id_input = st.text_input("Jump to Message ID (format: conversation_id:message_index)")
-        if st.button("Load & Jump to Message") and message_id_input:
-            try:
-                if ":" in message_id_input:
-                    conv_id, msg_idx = message_id_input.split(":", 1)
-                    msg_idx = int(msg_idx)
-                    
-                    # Load conversation if different from current
-                    if conv_id != st.session_state.conversation_id:
-                        conversation = load_conversation(conv_id)
-                        if conversation:
-                            # Set query parameters to trigger reload with new data
-                            st.query_params["load_conv_id"] = conv_id
-                            st.query_params["highlight_msg"] = str(msg_idx)
-                            st.rerun()
-                        else:
-                            st.error("Conversation not found")
-                    else:
-                        # Same conversation, just highlight
-                        if 0 <= msg_idx < len(st.session_state.messages):
-                            st.session_state.highlight_message = msg_idx
-                            st.rerun()
-                        else:
-                            st.error("Message index out of range")
-                else:
-                    st.error("Invalid message ID format. Use: conversation_id:message_index")
-            except ValueError:
-                st.error("Invalid message index. Must be a number.")
-        
-        # Display conversation ID
-        st.info(f"Conversation ID: {st.session_state.conversation_id}")
-        
-        # Chat messages
-        for i, message in enumerate(st.session_state.messages):
-            # Check if this message should be highlighted
-            is_highlighted = st.session_state.get("highlight_message") == i
-            
-            with st.chat_message(message["role"]):
-                if is_highlighted:
-                    st.markdown(f"🔍 **HIGHLIGHTED MESSAGE**")
-                    st.markdown(f"<div style='background-color: #b8860b; color: #fff; padding: 10px; border-radius: 5px; border-left: 4px solid #ffc107;'>{message['content']}</div>", unsafe_allow_html=True)
-                    # Clear highlight after showing
-                    if st.session_state.get("highlight_message") == i:
-                        st.session_state.highlight_message = None
-                else:
-                    st.markdown(message["content"])
-                st.caption(f"Message ID: {st.session_state.conversation_id}:{i}")
-        
-        # Chat input
-        if prompt := st.chat_input("What would you like to discuss?"):
-            # API keys are checked within the call_llm_api function
-            
-            if not st.session_state.system_prompt.strip():
-                st.error("Please set a system prompt before starting the conversation")
-                return
-            
-            # Add user message
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-                st.caption(f"Message ID: {st.session_state.conversation_id}:{len(st.session_state.messages)-1}")
-            
-            # Get AI response
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    try:
-                        # Prepare messages for the API call, including the system prompt
-                        api_messages = [{"role": "system", "content": st.session_state.system_prompt}] + st.session_state.messages
-                        
-                        response = asyncio.run(call_llm_api(
-                            messages=api_messages,
-                            model=model
-                        ))
-                        
-                        st.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                        st.caption(f"Message ID: {st.session_state.conversation_id}:{len(st.session_state.messages)-1}")
-                        
-                        # Save conversation (now with provider and model, summary is not set here)
-                        save_conversation(
-                            st.session_state.conversation_id,
-                            st.session_state.messages,
-                            st.session_state.system_prompt,
-                            model,
-                            summary=""
-                        )
-                        
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
-        
-        # New conversation button
-        if st.button("Start New Conversation"):
-            # Summarize previous conversation if it exists and has messages
-            if st.session_state.messages:
-                # We can use any capable model for summarization. Let's default to a fast one.
-                summary_model = "anthropic/claude-3-5-haiku-latest"
-                summary = summarize_conversation(
-                    st.session_state.messages, summary_model
-                )
-                
-                # Determine provider for logging
-                provider = model.split('/')[0] if '/' in model else "Unknown"
+    unified_chat_input = True
+    if side_by_side:
+        unified_chat_input = st.sidebar.toggle("Unified Chat Input", value=st.session_state.get('unified_chat_input', True))
 
-                # Save summary to previous conversation
-                save_conversation(
-                    st.session_state.conversation_id,
-                    st.session_state.messages,
-                    st.session_state.system_prompt,
-                    model,
-                    summary=summary
-                )
-            st.session_state.messages = []
-            st.session_state.conversation_id = str(uuid.uuid4())
-            st.rerun()
-    
-    with col2:
-        st.header("Tools")
-        logger.info("Rendering tools column.")
-        
-        # Message and Conversation Retrieval Panel
-        with st.expander("🔍 Message & Conversation Retrieval", expanded=False):
-            st.markdown("**Retrieve specific messages or full conversations by ID.**")
-            
-            # Get specific message
-            st.subheader("Get Message by ID")
-            msg_id_input = st.text_input("Enter Message ID (e.g., `conversation_id:message_index`)")
-            if st.button("Get Message"):
-                try:
-                    conv_id, msg_idx = msg_id_input.split(':')
-                    message = get_message_by_index(conv_id, int(msg_idx))
-                    if message:
-                        st.json(message)
-                    else:
-                        st.error("Message not found.")
-                except (ValueError, IndexError):
-                    st.error("Invalid format. Use `conversation_id:message_index`.")
+    # --- Get Public Link Button ---
+    if st.sidebar.button("🔗 Get Public Link"):
+        public_link = generate_public_link(side_by_side, unified_chat_input)
+        st.sidebar.code(public_link, language=None)
+        st.sidebar.info("Copy the link above to share this configuration.")
 
-            # Get full conversation
-            st.subheader("Get Full Conversation")
-            conv_id_input = st.text_input("Enter Conversation ID")
-            if st.button("Get Full Conversation"):
-                conversation = load_conversation(conv_id_input)
-                if conversation:
-                    st.json(conversation)
-                else:
-                    st.error("Conversation not found.")
+    columns = st.columns(2) if side_by_side else [st.container()]
 
-    logger.info("--- Finished Rendering UI ---")
+    # --- Render Chat Columns ---
+    model_1, persona_name_1, system_prompt_1, prompt_1 = render_chat_column(
+        columns[0], 1, persona_options, system_prompts, side_by_side, unified_chat_input
+    )
+
+    model_2, persona_name_2, system_prompt_2, prompt_2 = (None, None, None, None)
+    if side_by_side and len(columns) > 1:
+        model_2, persona_name_2, system_prompt_2, prompt_2 = render_chat_column(
+            columns[1], 2, persona_options, system_prompts, side_by_side, unified_chat_input
+        )
+
+    # --- Unified Chat Input Logic ---
+    unified_prompt = None
+    if not side_by_side:
+        unified_prompt = st.chat_input("Your message...", key="single_chat_input")
+    elif unified_chat_input:
+        unified_prompt = st.chat_input("Send a message to both...", key="unified_chat_input")
+
+    async def handle_response(prompt, col_index, model, persona_name, system_prompt):
+        messages_key = f"messages_{col_index}"
+        convo_id_key = f"current_conversation_id_{col_index}"
+
+        st.session_state[messages_key].append({"role": "user", "content": prompt})
+        convo_id, msg_id = save_conversation(
+            st.session_state.selected_db_path, st.session_state.get(convo_id_key),
+            "user", prompt, model=model, system_prompt_name=persona_name,
+            system_prompt=system_prompt
+        )
+        st.session_state[convo_id_key] = convo_id
+        st.session_state[messages_key][-1]['id'] = msg_id
+
+
+    async def run_all_responses(prompt):
+        tasks = []
+        # Fire off the first response
+        tasks.append(stream_and_display_response(
+            columns[0], system_prompt_1, "messages_1", model_1,
+            "current_conversation_id_1", persona_name_1
+        ))
+        # Fire off the second response if in side-by-side mode
+        if side_by_side and len(columns) > 1:
+            tasks.append(stream_and_display_response(
+                columns[1], system_prompt_2, "messages_2", model_2,
+                "current_conversation_id_2", persona_name_2
+            ))
+        await asyncio.gather(*tasks)
+
+
+    if unified_prompt:
+        # Handle message for column 1
+        asyncio.run(handle_response(unified_prompt, 1, model_1, persona_name_1, system_prompt_1))
+        # Handle message for column 2 if in side-by-side mode
+        if side_by_side and model_2:
+            asyncio.run(handle_response(unified_prompt, 2, model_2, persona_name_2, system_prompt_2))
+        # Now run the assistant responses for both columns
+        asyncio.run(run_all_responses(unified_prompt))
+
+    if prompt_1:
+        asyncio.run(handle_response(prompt_1, 1, model_1, persona_name_1, system_prompt_1))
+        asyncio.run(stream_and_display_response(
+            columns[0], system_prompt_1, "messages_1", model_1,
+            "current_conversation_id_1", persona_name_1
+        ))
+
+    if prompt_2:
+        asyncio.run(handle_response(prompt_2, 2, model_2, persona_name_2, system_prompt_2))
+        asyncio.run(stream_and_display_response(
+            columns[1], system_prompt_2, "messages_2", model_2,
+            "current_conversation_id_2", persona_name_2
+        ))
+
+    if st.session_state.get('rerun_needed'):
+        del st.session_state['rerun_needed']
+        st.rerun()
+
 
 if __name__ == "__main__":
     main()

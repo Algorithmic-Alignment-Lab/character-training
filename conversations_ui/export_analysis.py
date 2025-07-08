@@ -11,8 +11,11 @@ def get_persona_name_map():
     """Creates a mapping from system prompt content to persona name."""
     try:
         with open(PROMPTS_PATH, 'r') as f:
-            prompts = json.load(f)
-        return {v: k for k, v in prompts.items()}
+            prompts = json.load(f).get("personas", [])
+        return {
+            p['system_prompt']: f"{p['name']} ({p['version']})"
+            for p in prompts
+        }
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Error reading system prompts file: {e}")
         return {}
