@@ -51,7 +51,7 @@ def get_available_databases():
 
 def generate_public_link(side_by_side: bool, unified_chat_input: bool):
     """Generate a public link with current configuration."""
-    base_url = "http://localhost:8502"  # Replace with your app's actual URL
+    base_url = "http://localhost:8501"  # Replace with your app's actual URL
     params = {
         'run_db': st.session_state.selected_db_path,
         'side_by_side': str(side_by_side).lower(),
@@ -284,10 +284,32 @@ def render_chat_column(
         default_persona_index = persona_options.index(st.session_state.get(f"persona_{col_index}", current_convo.get('system_prompt_name') if current_convo else 'Agora, Collaborative Thinker (With Backstory)'))
 
         model = st.selectbox("Model", ALL_MODELS, key=f"model_{col_index}", index=default_model_index)
-        selected_persona_name = st.selectbox("Persona", persona_options, key=f"persona_{col_index}", index=default_persona_index)
+        
+        # Persona selection with view prompt button
+        persona_col, button_col = st.columns([4, 1])
+        with persona_col:
+            selected_persona_name = st.selectbox("Persona", persona_options, key=f"persona_{col_index}", index=default_persona_index)
+        with button_col:
+            st.markdown("<br>", unsafe_allow_html=True)  # Add spacing to align with selectbox
+            if st.button("👁️ View", key=f"view_prompt_{col_index}", help="View system prompt and traits"):
+                st.session_state[f"show_prompt_{col_index}"] = not st.session_state.get(f"show_prompt_{col_index}", False)
+        
         persona = get_persona_by_formatted_name(selected_persona_name, system_prompts)
         system_prompt = persona['system_prompt'] if persona else ""
         persona_name = format_persona_name(persona) if persona else ""
+        
+        # Display system prompt and traits if toggled
+        if st.session_state.get(f"show_prompt_{col_index}", False) and persona:
+            with st.expander("📋 System Prompt & Character Traits", expanded=True):
+                st.subheader("Character Traits")
+                if persona.get('traits'):
+                    for trait in persona['traits']:
+                        st.markdown(f"• {trait}")
+                else:
+                    st.markdown("No traits defined for this persona")
+                
+                st.subheader("System Prompt")
+                st.text_area("", value=system_prompt, height=300, disabled=True, key=f"prompt_display_{col_index}")
 
         # --- Jump to Message Input ---
         st.text_input("Jump to Message ID", key=f"jump_input_{col_index}", on_change=lambda: st.session_state.update({jump_key: st.session_state[f"jump_input_{col_index}"]}))
@@ -298,6 +320,18 @@ def render_chat_column(
                 st.markdown(msg["content"])
                 if msg.get('id'):
                     st.caption(f"ID: {msg['id']}")
+                
+                # Add copy button for AI messages
+                if msg["role"] == "assistant":
+                    copy_key = f"copy_{msg.get('id', id(msg))}_{col_index}"
+                    if st.button("📋 Copy", key=copy_key, help="Copy raw response"):
+                        # Display the content in a text area that can be easily copied
+                        st.text_area("Raw Response (Select All and Copy):", 
+                                   value=msg["content"], 
+                                   height=200,
+                                   key=f"copy_area_{copy_key}",
+                                   help="Select all text (Ctrl+A) and copy (Ctrl+C)")
+                        st.info("Select all text above and copy to clipboard (Ctrl+A, then Ctrl+C)")
 
         # --- Individual Chat Input ---
         prompt = None
