@@ -357,7 +357,13 @@ def main():
         
         # Handle database selection
         if "run_db" in query_params:
-            st.session_state.selected_db_path = query_params["run_db"]
+            requested_db = query_params["run_db"]
+            # Validate that the database file exists, otherwise use default
+            if os.path.exists(requested_db):
+                st.session_state.selected_db_path = requested_db
+            else:
+                st.session_state.selected_db_path = MAIN_DB
+                st.warning(f"Database file not found: {requested_db}. Using default database.")
         
         # Handle side-by-side configuration
         if "side_by_side" in query_params:
@@ -370,14 +376,27 @@ def main():
         # Handle column 1 configuration
         if "convo_id_1" in query_params:
             convo_id = query_params["convo_id_1"]
-            st.session_state.current_conversation_id_1 = convo_id
-            st.session_state.messages_1 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
-            
-            if os.path.exists(st.session_state.selected_db_path):
-                convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
-                if convo:
-                    st.session_state["model_1"] = convo.get("model")
-                    st.session_state["persona_1"] = convo.get("system_prompt_name")
+            try:
+                # Check if the conversation exists in the current database
+                messages = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+                if messages or convo_id is None:
+                    st.session_state.current_conversation_id_1 = convo_id
+                    st.session_state.messages_1 = messages
+                    
+                    if os.path.exists(st.session_state.selected_db_path):
+                        convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
+                        if convo:
+                            st.session_state["model_1"] = convo.get("model")
+                            st.session_state["persona_1"] = convo.get("system_prompt_name")
+                else:
+                    # Conversation doesn't exist in this database
+                    st.warning(f"Conversation {convo_id[:8]}... not found in current database. Starting with empty conversation.")
+                    st.session_state.current_conversation_id_1 = None
+                    st.session_state.messages_1 = []
+            except Exception as e:
+                st.error(f"Error loading conversation: {e}")
+                st.session_state.current_conversation_id_1 = None
+                st.session_state.messages_1 = []
         
         if "model_1" in query_params:
             st.session_state["model_1"] = query_params["model_1"]
@@ -387,14 +406,27 @@ def main():
         # Handle column 2 configuration  
         if "convo_id_2" in query_params:
             convo_id = query_params["convo_id_2"]
-            st.session_state.current_conversation_id_2 = convo_id
-            st.session_state.messages_2 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
-            
-            if os.path.exists(st.session_state.selected_db_path):
-                convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
-                if convo:
-                    st.session_state["model_2"] = convo.get("model")
-                    st.session_state["persona_2"] = convo.get("system_prompt_name")
+            try:
+                # Check if the conversation exists in the current database
+                messages = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+                if messages or convo_id is None:
+                    st.session_state.current_conversation_id_2 = convo_id
+                    st.session_state.messages_2 = messages
+                    
+                    if os.path.exists(st.session_state.selected_db_path):
+                        convo = load_conversation_from_db(st.session_state.selected_db_path, convo_id)
+                        if convo:
+                            st.session_state["model_2"] = convo.get("model")
+                            st.session_state["persona_2"] = convo.get("system_prompt_name")
+                else:
+                    # Conversation doesn't exist in this database
+                    st.warning(f"Conversation {convo_id[:8]}... not found in current database. Starting with empty conversation.")
+                    st.session_state.current_conversation_id_2 = None
+                    st.session_state.messages_2 = []
+            except Exception as e:
+                st.error(f"Error loading conversation: {e}")
+                st.session_state.current_conversation_id_2 = None
+                st.session_state.messages_2 = []
         
         if "model_2" in query_params:
             st.session_state["model_2"] = query_params["model_2"]
@@ -405,7 +437,11 @@ def main():
         if "convo_id" in query_params and "convo_id_1" not in query_params:
             convo_id = query_params["convo_id"]
             st.session_state.current_conversation_id_1 = convo_id
-            st.session_state.messages_1 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+            try:
+                st.session_state.messages_1 = get_messages(st.session_state.selected_db_path, convo_id) if convo_id else []
+            except Exception as e:
+                st.error(f"Error loading conversation: {e}")
+                st.session_state.messages_1 = []
 
         st.session_state["query_params_processed"] = True
         st.rerun()
