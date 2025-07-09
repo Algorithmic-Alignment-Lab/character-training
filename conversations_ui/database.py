@@ -56,6 +56,80 @@ def init_db(db_path: str = MAIN_DATABASE_FILE):
         )
         """)
 
+        # Create evaluation_ideas table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_ideas (
+            id TEXT PRIMARY KEY,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            round_generated INTEGER NOT NULL,
+            selected BOOLEAN DEFAULT FALSE
+        )
+        """)
+
+        # Create evaluation_contexts table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_contexts (
+            id TEXT PRIMARY KEY,
+            idea_id TEXT NOT NULL,
+            pages INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (idea_id) REFERENCES evaluation_ideas (id)
+        )
+        """)
+
+        # Create evaluation_conversations table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_conversations (
+            id TEXT PRIMARY KEY,
+            idea_id TEXT NOT NULL,
+            context_id TEXT NOT NULL,
+            config_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (idea_id) REFERENCES evaluation_ideas (id),
+            FOREIGN KEY (context_id) REFERENCES evaluation_contexts (id)
+        )
+        """)
+
+        # Create single_judgments table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS single_judgments (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            judge_model TEXT NOT NULL,
+            trait_judgments_json TEXT NOT NULL,
+            overall_reasoning TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES evaluation_conversations (id)
+        )
+        """)
+
+        # Create elo_comparisons table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS elo_comparisons (
+            id TEXT PRIMARY KEY,
+            conversation_ids_json TEXT NOT NULL,
+            judge_model TEXT NOT NULL,
+            trait TEXT NOT NULL,
+            rankings_json TEXT NOT NULL,
+            reasoning TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
+
+        # Create evaluation_summaries table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS evaluation_summaries (
+            id TEXT PRIMARY KEY,
+            filepath TEXT NOT NULL,
+            trait_summaries_json TEXT,
+            elo_summaries_json TEXT,
+            overall_score REAL NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
+
         # --- Schema Migrations ---
         cursor.execute("PRAGMA table_info(conversations)")
         convo_columns = [column[1] for column in cursor.fetchall()]

@@ -295,9 +295,26 @@ def render_chat_column(
         # --- Display Messages ---
         for msg in st.session_state.get(messages_key, []):
             with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-                if msg.get('id'):
-                    st.caption(f"ID: {msg['id']}")
+                # Create columns for message content and copy button
+                msg_col, copy_col = st.columns([10, 1])
+                
+                with msg_col:
+                    st.markdown(msg["content"])
+                    if msg.get('id'):
+                        st.caption(f"ID: {msg['id']}")
+                
+                with copy_col:
+                    # Add copy button with unique key
+                    copy_key = f"copy_{col_index}_{msg.get('id', hash(msg['content']))}"
+                    if st.button("📋", key=copy_key, help="Copy message"):
+                        # Use JavaScript to copy to clipboard
+                        copy_js = f"""
+                        <script>
+                        navigator.clipboard.writeText(`{msg['content'].replace('`', '\`')}`);
+                        </script>
+                        """
+                        st.components.v1.html(copy_js, height=0)
+                        st.success("Copied to clipboard!", icon="✅")
 
         # --- Individual Chat Input ---
         prompt = None
@@ -311,6 +328,22 @@ def main():
     """Main function to run the Streamlit chatbot application."""
     st.set_page_config(layout="wide", page_title="LLM Persona Evaluator")
     st.title("LLM Persona Evaluator")
+    
+    # Create tabs for different sections
+    tab1, tab2, tab3 = st.tabs(["Chat Interface", "Analysis", "Evaluations"])
+    
+    with tab1:
+        main_chat_interface()
+    
+    with tab2:
+        display_analysis_interface()
+    
+    with tab3:
+        display_evaluation_dashboard()
+
+
+def main_chat_interface():
+    """Main chat interface functionality."""
 
     system_prompts = load_system_prompts()
     persona_options = [format_persona_name(p) for p in system_prompts]
@@ -489,6 +522,343 @@ def main():
     if st.session_state.get('rerun_needed'):
         del st.session_state['rerun_needed']
         st.rerun()
+
+
+def display_analysis_interface():
+    """Display the existing analysis functionality."""
+    st.header("Analysis Interface")
+    st.info("This tab would contain the existing analysis functionality. "
+           "You can move the analyze_results.py functionality here if needed.")
+
+
+def display_evaluation_dashboard():
+    """Display evaluation results dashboard."""
+    try:
+        import plotly.graph_objects as go
+        import plotly.express as px
+        import sqlite3
+        import pandas as pd
+        from glob import glob
+    except ImportError as e:
+        st.error(f"Missing required packages: {e}. Please install with: pip install plotly pandas")
+        return
+    
+    st.header("Evaluation Results Dashboard")
+    
+    eval_type = st.selectbox("Evaluation Type", ["summary", "single", "elo"])
+    
+    if eval_type == "summary":
+        display_evaluation_summaries()
+    elif eval_type == "single":
+        display_single_evaluations()
+    elif eval_type == "elo":
+        display_elo_evaluations()
+
+
+def display_evaluation_summaries():
+    """Display evaluation summaries overview."""
+    st.subheader("Evaluation Summaries")
+    
+    # Look for evaluation results directories
+    eval_dirs = glob("evaluation_results/*/")
+    eval_dirs.extend(glob("evaluation_data/*/"))
+    eval_dirs.extend(glob("evaluation_data/*/evaluation_results/"))
+    
+    if not eval_dirs:
+        st.warning("No evaluation results found. Run evaluations first using judge_conversations.py")
+        return
+    
+    summary_files = []
+    for eval_dir in eval_dirs:
+        summary_file = os.path.join(eval_dir, "evaluation_summaries.db")
+        if os.path.exists(summary_file):
+            summary_files.append(summary_file)
+    
+    if not summary_files:
+        st.warning("No evaluation summary files found.")
+        return
+    
+    # File selector
+    selected_file = st.selectbox("Select Evaluation Run", summary_files)
+    
+    if selected_file:
+        summaries = load_summaries_from_db(selected_file)
+        
+        if summaries:
+            # Overview metrics
+            st.subheader("Overview")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Files Evaluated", len(summaries))
+            with col2:
+                avg_score = sum(s['overall_score'] for s in summaries) / len(summaries)
+                st.metric("Avg Overall Score", f"{avg_score:.2f}")
+            with col3:
+                st.metric("Evaluation Date", summaries[0]['created_at'][:10])
+            
+            # Individual results
+            st.subheader("Results by Model/Configuration")
+            for summary in summaries:
+                with st.expander(f"Results for {os.path.basename(summary['filepath'])}"):
+                    display_filepath_summary(summary)
+
+
+def display_single_evaluations():
+    """Display single evaluation results."""
+    try:
+        import pandas as pd
+        from glob import glob
+    except ImportError as e:
+        st.error(f"Missing required packages: {e}")
+        return
+        
+    st.subheader("Single Evaluation Results")
+    
+    # Look for single judgment files
+    judgment_files = glob("evaluation_results/*/single_judgments.db")
+    judgment_files.extend(glob("evaluation_data/*/evaluation_results/single_judgments.db"))
+    
+    if not judgment_files:
+        st.warning("No single evaluation results found.")
+        return
+    
+    selected_file = st.selectbox("Select Judgment File", judgment_files)
+    
+    if selected_file:
+        judgments = load_single_judgments_from_db(selected_file)
+        
+        if judgments:
+            # Summary statistics
+            st.subheader("Summary Statistics")
+            trait_stats = calculate_trait_statistics(judgments)
+            st.dataframe(trait_stats)
+            
+            # Individual conversation details
+            st.subheader("Individual Conversation Evaluations")
+            for judgment in judgments:
+                with st.expander(f"Conversation {judgment['conversation_id'][:8]}..."):
+                    st.write("**Overall Reasoning:**", judgment['overall_reasoning'])
+                    
+                    # Display trait judgments
+                    trait_data = []
+                    for tj in judgment['trait_judgments']:
+                        trait_data.append({
+                            'Trait': tj['trait'],
+                            'Score': tj['score'],
+                            'Reasoning': tj['reasoning']
+                        })
+                    
+                    if trait_data:
+                        df = pd.DataFrame(trait_data)
+                        st.dataframe(df)
+
+
+def display_elo_evaluations():
+    """Display ELO evaluation results."""
+    try:
+        import pandas as pd
+        from glob import glob
+    except ImportError as e:
+        st.error(f"Missing required packages: {e}")
+        return
+        
+    st.subheader("ELO Evaluation Results")
+    
+    # Look for ELO comparison files
+    comparison_files = glob("evaluation_results/*/elo_comparisons.db")
+    comparison_files.extend(glob("evaluation_data/*/evaluation_results/elo_comparisons.db"))
+    
+    if not comparison_files:
+        st.warning("No ELO evaluation results found.")
+        return
+    
+    selected_file = st.selectbox("Select Comparison File", comparison_files)
+    
+    if selected_file:
+        comparisons = load_elo_comparisons_from_db(selected_file)
+        
+        if comparisons:
+            # Group by trait
+            traits = list(set(comp['trait'] for comp in comparisons))
+            
+            st.subheader("ELO Rankings by Trait")
+            for trait in traits:
+                trait_comparisons = [comp for comp in comparisons if comp['trait'] == trait]
+                
+                with st.expander(f"{trait} Rankings"):
+                    for comparison in trait_comparisons:
+                        st.write("**Reasoning:**", comparison['reasoning'])
+                        
+                        # Create rankings dataframe
+                        rankings_data = []
+                        for ranking in comparison['rankings']:
+                            rankings_data.append({
+                                'Conversation ID': ranking['conversation_id'][:8] + '...',
+                                'Rank': ranking['rank'],
+                                'Score': ranking['score']
+                            })
+                        
+                        if rankings_data:
+                            df = pd.DataFrame(rankings_data)
+                            df = df.sort_values('Rank')
+                            st.dataframe(df)
+
+
+def display_filepath_summary(summary):
+    """Display detailed results for a single filepath."""
+    import plotly.graph_objects as go
+    
+    # Overall score
+    st.metric("Overall Score", f"{summary['overall_score']:.2f}")
+    
+    # Parse trait summaries if available
+    if summary.get('trait_summaries_json'):
+        import json
+        try:
+            trait_summaries = json.loads(summary['trait_summaries_json'])
+            
+            if trait_summaries:
+                st.subheader("Trait Scores")
+                
+                # Create radar chart
+                traits = [ts['trait'] for ts in trait_summaries]
+                scores = [ts['average_score'] for ts in trait_summaries]
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatterpolar(
+                    r=scores,
+                    theta=traits,
+                    fill='toself',
+                    name='Trait Scores'
+                ))
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 5]
+                        )),
+                    showlegend=False,
+                    title="Trait Score Profile"
+                )
+                st.plotly_chart(fig)
+                
+                # Detailed trait breakdown
+                for trait_summary in trait_summaries:
+                    with st.expander(f"{trait_summary['trait']} Details"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Average Score", f"{trait_summary['average_score']:.2f}")
+                            st.metric("Std Deviation", f"{trait_summary['std_deviation']:.2f}")
+                        with col2:
+                            # Score distribution
+                            dist = trait_summary.get('score_distribution', {})
+                            if dist:
+                                scores = list(dist.keys())
+                                counts = list(dist.values())
+                                
+                                fig = go.Figure([go.Bar(x=scores, y=counts)])
+                                fig.update_layout(
+                                    title="Score Distribution",
+                                    xaxis_title="Score",
+                                    yaxis_title="Count"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+        except json.JSONDecodeError:
+            st.error("Could not parse trait summaries data")
+
+
+def load_summaries_from_db(db_path):
+    """Load evaluation summaries from database."""
+    import sqlite3
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM evaluation_summaries ORDER BY created_at DESC")
+            return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        st.error(f"Error loading summaries from {db_path}: {e}")
+        return []
+
+
+def load_single_judgments_from_db(db_path):
+    """Load single judgments from database."""
+    import sqlite3
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM single_judgments ORDER BY created_at DESC")
+            judgments = []
+            for row in cursor.fetchall():
+                judgment = dict(row)
+                # Parse trait judgments JSON
+                if judgment.get('trait_judgments_json'):
+                    import json
+                    try:
+                        judgment['trait_judgments'] = json.loads(judgment['trait_judgments_json'])
+                    except json.JSONDecodeError:
+                        judgment['trait_judgments'] = []
+                judgments.append(judgment)
+            return judgments
+    except sqlite3.Error as e:
+        st.error(f"Error loading judgments from {db_path}: {e}")
+        return []
+
+
+def load_elo_comparisons_from_db(db_path):
+    """Load ELO comparisons from database."""
+    import sqlite3
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM elo_comparisons ORDER BY created_at DESC")
+            comparisons = []
+            for row in cursor.fetchall():
+                comparison = dict(row)
+                # Parse rankings JSON
+                if comparison.get('rankings_json'):
+                    import json
+                    try:
+                        comparison['rankings'] = json.loads(comparison['rankings_json'])
+                    except json.JSONDecodeError:
+                        comparison['rankings'] = []
+                comparisons.append(comparison)
+            return comparisons
+    except sqlite3.Error as e:
+        st.error(f"Error loading comparisons from {db_path}: {e}")
+        return []
+
+
+def calculate_trait_statistics(judgments):
+    """Calculate summary statistics for traits across all judgments."""
+    import pandas as pd
+    
+    trait_data = {}
+    
+    for judgment in judgments:
+        for tj in judgment.get('trait_judgments', []):
+            trait = tj['trait']
+            score = tj['score']
+            
+            if trait not in trait_data:
+                trait_data[trait] = []
+            trait_data[trait].append(score)
+    
+    # Calculate statistics
+    stats = []
+    for trait, scores in trait_data.items():
+        stats.append({
+            'Trait': trait,
+            'Average Score': sum(scores) / len(scores),
+            'Min Score': min(scores),
+            'Max Score': max(scores),
+            'Count': len(scores)
+        })
+    
+    return pd.DataFrame(stats)
 
 
 if __name__ == "__main__":
