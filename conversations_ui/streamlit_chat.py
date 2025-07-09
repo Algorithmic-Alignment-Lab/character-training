@@ -141,6 +141,7 @@ def initialize_session_state():
         st.session_state.messages_2 = []
         st.session_state.jump_to_message_id_1 = None
         st.session_state.jump_to_message_id_2 = None
+        st.session_state.unified_chat_input = True
 
 
 async def stream_and_display_response(
@@ -373,7 +374,7 @@ def main_chat_interface():
 
     initialize_session_state()
 
-    # --- Query Params Handling ---
+    # --- Query Params Handling (must happen before any widgets are rendered) ---
     if "query_params_processed" not in st.session_state:
         query_params = st.query_params.to_dict()
         
@@ -394,6 +395,9 @@ def main_chat_interface():
         # Handle unified chat input
         if "unified_chat_input" in query_params:
             st.session_state.unified_chat_input = query_params["unified_chat_input"].lower() == "true"
+        else:
+            # Set default if not specified
+            st.session_state.unified_chat_input = True
         
         # Handle column 1 configuration
         if "convo_id_1" in query_params:
@@ -510,6 +514,7 @@ def main_chat_interface():
     unified_chat_input = True
     if side_by_side:
         unified_chat_input = st.sidebar.toggle("Unified Chat Input", value=st.session_state.get('unified_chat_input', True))
+        st.session_state.unified_chat_input = unified_chat_input
 
     # --- Get Public Link Button ---
     if st.sidebar.button("🔗 Get Public Link"):
@@ -535,7 +540,7 @@ def main_chat_interface():
     if not side_by_side:
         unified_prompt = st.chat_input("Your message...", key="single_chat_input")
     elif unified_chat_input:
-        unified_prompt = st.chat_input("Send a message to both...", key="unified_chat_input")
+        unified_prompt = st.chat_input("Send a message to both...", key="unified_chat_input_widget")
 
     async def handle_response(prompt, col_index, model, persona_name, system_prompt):
         messages_key = f"messages_{col_index}"
