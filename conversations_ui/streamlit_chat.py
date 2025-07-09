@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import asyncio
 import urllib.parse
+from glob import glob
 import database as db
 from database import (
     get_conversations, get_messages, save_conversation,
@@ -332,7 +333,7 @@ def render_chat_column(
                         # Use JavaScript to copy to clipboard
                         copy_js = f"""
                         <script>
-                        navigator.clipboard.writeText(`{msg['content'].replace('`', '\`')}`);
+                        navigator.clipboard.writeText(`{msg['content'].replace('`', '\\`')}`);
                         </script>
                         """
                         st.components.v1.html(copy_js, height=0)
@@ -482,6 +483,18 @@ def main_chat_interface():
     st.session_state.selected_db_path = available_dbs[selected_db_name]
     st.sidebar.info(f"DB: `{os.path.basename(st.session_state.selected_db_path)}`")
 
+    # --- Start New Conversation Button ---
+    if st.sidebar.button("🆕 Start New Conversation", use_container_width=True):
+        # Reset only conversation state, keep all other configurations
+        st.session_state.current_conversation_id_1 = None
+        st.session_state.current_conversation_id_2 = None
+        st.session_state.messages_1 = []
+        st.session_state.messages_2 = []
+        st.session_state.jump_to_message_id_1 = None
+        st.session_state.jump_to_message_id_2 = None
+        # Keep all other settings like model, persona, side_by_side, etc.
+        st.rerun()
+
     if st.session_state.selected_db_path != MAIN_DB:
         new_run_name = st.sidebar.text_input("Rename Run", key="new_run_name")
         if st.sidebar.button("Rename"):
@@ -596,7 +609,6 @@ def display_evaluation_dashboard():
         import plotly.express as px
         import sqlite3
         import pandas as pd
-        from glob import glob
     except ImportError as e:
         st.error(f"Missing required packages: {e}. Please install with: pip install plotly pandas")
         return
@@ -666,7 +678,6 @@ def display_single_evaluations():
     """Display single evaluation results."""
     try:
         import pandas as pd
-        from glob import glob
     except ImportError as e:
         st.error(f"Missing required packages: {e}")
         return
@@ -716,7 +727,6 @@ def display_elo_evaluations():
     """Display ELO evaluation results."""
     try:
         import pandas as pd
-        from glob import glob
     except ImportError as e:
         st.error(f"Missing required packages: {e}")
         return
@@ -806,8 +816,8 @@ def display_filepath_summary(summary):
                     with st.expander(f"{trait_summary['trait']} Details"):
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.metric("Average Score", f"{trait_summary['average_score']:.2f}")
-                            st.metric("Std Deviation", f"{trait_summary['std_deviation']:.2f}")
+                            st.metric("Average Score", f"{trait_summary.get('average_score', 0):.2f}")
+                            st.metric("Std Deviation", f"{trait_summary.get('std_deviation', 0):.2f}")
                         with col2:
                             # Score distribution
                             dist = trait_summary.get('score_distribution', {})
