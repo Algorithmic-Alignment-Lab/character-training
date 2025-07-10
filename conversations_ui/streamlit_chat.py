@@ -618,9 +618,31 @@ def display_evaluation_dashboard():
         st.error(f"Missing required packages: {e}. Please install with: pip install plotly pandas")
         return
     
-    st.header("Evaluation Results Dashboard")
+    st.header("🔍 Evaluation Results Dashboard")
     
-    eval_type = st.selectbox("Evaluation Type", ["summary", "single", "elo"])
+    # Overview of available evaluation data
+    st.subheader("📊 Available Evaluation Data")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        summary_files = glob("evaluation_results/*/evaluation_summaries.db")
+        summary_files.extend(glob("evaluation_data/*/evaluation_results/evaluation_summaries.db"))
+        st.metric("Summary Files", len(summary_files))
+    
+    with col2:
+        judgment_files = glob("evaluation_results/*/single_judgments.db")
+        judgment_files.extend(glob("evaluation_data/*/evaluation_results/single_judgments.db"))
+        st.metric("Single Judgment Files", len(judgment_files))
+    
+    with col3:
+        comparison_files = glob("evaluation_results/*/elo_comparisons.db")
+        comparison_files.extend(glob("evaluation_data/*/evaluation_results/elo_comparisons.db"))
+        st.metric("ELO Comparison Files", len(comparison_files))
+    
+    # Evaluation type selection
+    st.subheader("📋 Select Evaluation Type")
+    eval_type = st.selectbox("Evaluation Type", ["summary", "single", "elo"], 
+                           help="Summary: Cross-model comparison, Single: Individual conversation analysis, ELO: Comparative rankings")
     
     if eval_type == "summary":
         display_evaluation_summaries()
@@ -629,6 +651,58 @@ def display_evaluation_dashboard():
     elif eval_type == "elo":
         display_elo_evaluations()
 
+
+def get_evaluation_config_summary(db_path):
+    """Get configuration summary for an evaluation run."""
+    import sqlite3
+    import json
+    
+    try:
+        # Check if it's an evaluation database
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Try to get evaluation configuration
+            try:
+                cursor.execute("SELECT config_json FROM evaluation_conversations LIMIT 1")
+                config_row = cursor.fetchone()
+                if config_row:
+                    config = json.loads(config_row[0])
+                    return {
+                        'type': 'Evaluation Database',
+                        'model': config.get('model', 'Unknown'),
+                        'system_prompt': config.get('system_prompt', 'Unknown')[:100] + '...',
+                        'timestamp': config.get('timestamp', 'Unknown'),
+                        'ideas_filepath': config.get('ideas_filepath', 'Unknown'),
+                        'user_template': config.get('user_message_template', 'Unknown')[:50] + '...'
+                    }
+            except:
+                pass
+                
+            # Try regular conversation database
+            try:
+                cursor.execute("SELECT model, system_prompt, created_at FROM conversations LIMIT 1")
+                conv_row = cursor.fetchone()
+                if conv_row:
+                    return {
+                        'type': 'Conversation Database',
+                        'model': conv_row[0] or 'Unknown',
+                        'system_prompt': (conv_row[1] or 'Unknown')[:100] + '...',
+                        'created_at': conv_row[2] or 'Unknown',
+                        'timestamp': conv_row[2] or 'Unknown'
+                    }
+            except:
+                pass
+                
+    except Exception as e:
+        pass
+    
+    return {
+        'type': 'Unknown Database',
+        'model': 'Unknown',
+        'system_prompt': 'Unable to read configuration',
+        'timestamp': 'Unknown'
+    }
 
 def display_evaluation_summaries():
     """Display evaluation summaries overview."""
@@ -708,24 +782,63 @@ def display_single_evaluations():
             trait_stats = calculate_trait_statistics(judgments)
             st.dataframe(trait_stats)
             
-            # Individual conversation details
-            st.subheader("Individual Conversation Evaluations")
+            # Evaluation Results Table
+            st.subheader("Evaluation Results")
+            
+            # Create a comprehensive table with all judgments and traits
+            evaluation_data = []
             for judgment in judgments:
-                with st.expander(f"Conversation {judgment['conversation_id'][:8]}..."):
-                    st.write("**Overall Reasoning:**", judgment['overall_reasoning'])
-                    
-                    # Display trait judgments
-                    trait_data = []
-                    for tj in judgment['trait_judgments']:
-                        trait_data.append({
-                            'Trait': tj['trait'],
-                            'Score': tj['score'],
-                            'Reasoning': tj['reasoning']
-                        })
-                    
-                    if trait_data:
-                        df = pd.DataFrame(trait_data)
-                        st.dataframe(df)
+                conv_id_short = judgment['conversation_id'][:8] + '...'
+                
+                # Create one row per conversation with all traits as columns
+                row = {
+                    'Conversation ID': conv_id_short,
+                    'Full Conversation ID': judgment['conversation_id']
+                }
+                
+                # Add trait scores as columns
+                for tj in judgment['trait_judgments']:
+                    row[f"{tj['trait']} Score"] = tj['score']
+                
+                # Add view button identifier
+                row['View'] = f"view_conv_{judgment['conversation_id']}"
+                evaluation_data.append(row)
+            
+            if evaluation_data:
+                # Display the main table
+                display_df = pd.DataFrame(evaluation_data)
+                # Remove the internal columns we don't want to show
+                table_df = display_df.drop(['Full Conversation ID', 'View'], axis=1)
+                st.dataframe(table_df, use_container_width=True)
+                
+                # Add view conversation buttons in a row
+                st.subheader("View Full Conversations")
+                cols = st.columns(min(len(judgments), 4))
+                for i, judgment in enumerate(judgments):
+                    with cols[i % 4]:
+                        conv_id_short = judgment['conversation_id'][:8]
+                        if st.button(f"View {conv_id_short}", key=f"view_conv_{judgment['conversation_id']}"):
+                            conversation = load_conversation_details(selected_file, judgment['conversation_id'])
+                            if conversation:
+                                with st.expander(f"Conversation {conv_id_short} Details", expanded=True):
+                                    st.write("**Overall Reasoning:**", judgment['overall_reasoning'])
+                                    
+                                    # Show trait reasoning in a table
+                                    trait_reasoning = []
+                                    for tj in judgment['trait_judgments']:
+                                        trait_reasoning.append({
+                                            'Trait': tj['trait'],
+                                            'Score': tj['score'],
+                                            'Reasoning': tj['reasoning']
+                                        })
+                                    
+                                    if trait_reasoning:
+                                        st.subheader("Trait Evaluations")
+                                        df = pd.DataFrame(trait_reasoning)
+                                        st.dataframe(df, use_container_width=True)
+                                    
+                                    st.subheader("Full Conversation")
+                                    display_conversation_details(conversation, selected_file)
 
 
 def display_elo_evaluations():
@@ -741,15 +854,69 @@ def display_elo_evaluations():
     # Look for ELO comparison files
     comparison_files = glob("evaluation_results/*/elo_comparisons.db")
     comparison_files.extend(glob("evaluation_data/*/evaluation_results/elo_comparisons.db"))
+    comparison_files.extend(glob("evaluation_data/*/elo_comparisons.db"))
+    comparison_files.extend(glob("evaluation_data/elo_*/elo_comparisons.db"))
     
     if not comparison_files:
         st.warning("No ELO evaluation results found.")
+        
+        # Add button to run ELO evaluation
+        st.subheader("Run ELO Evaluation")
+        st.write("Create ELO comparison data by comparing conversations from different database files.")
+        
+        # Find available database files
+        db_files = []
+        for path in ["/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/conversations_ui/conversations.db",
+                    "/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/conversations_ui/evaluation_data/20250708_195807/hostile_mental_health_response_evaluation.db"]:
+            if os.path.exists(path):
+                db_files.append(path)
+        
+        if len(db_files) >= 2:
+            if st.button("Run Sample ELO Comparison"):
+                st.info("To run ELO comparison, use the command line:\n\n"
+                       f"python judge_conversations.py --evaluation-type elo --judge-model anthropic/claude-sonnet-4-20250514 "
+                       f"--filepaths {' '.join(db_files[:2])} --traits helpfulness consistency")
+        else:
+            st.info("Need at least 2 database files for ELO comparison.")
+        
         return
     
     selected_file = st.selectbox("Select Comparison File", comparison_files)
     
     if selected_file:
+        # Show configuration info for the ELO evaluation
+        st.subheader("ELO Evaluation Configuration")
+        elo_dir = os.path.dirname(selected_file)
+        
+        # Look for database files involved in this ELO comparison
         comparisons = load_elo_comparisons_from_db(selected_file)
+        
+        if comparisons and len(comparisons) > 0:
+            # Extract database paths from conversation IDs
+            first_comparison = comparisons[0]
+            st.write(f"**Judge Model:** {first_comparison.get('judge_model', 'Unknown')}")
+            st.write(f"**Traits Evaluated:** {', '.join(set(comp['trait'] for comp in comparisons))}")
+            st.write(f"**Total Conversations:** {len(first_comparison.get('conversation_ids', []))}")
+            
+            # Show link to view configurations
+            with st.expander("📋 View Database Configurations"):
+                # Try to find original database files
+                db_patterns = [
+                    "evaluation_data/*/emotional_distress_response_evaluation_benchmark.db",
+                    "evaluation_data/*/sensitive_discussion_ethical_response_evaluation.db", 
+                    "evaluation_data/*/poetry_feedback_user_interaction_analysis.db"
+                ]
+                
+                for pattern in db_patterns:
+                    db_files = glob(pattern)
+                    for db_file in db_files:
+                        config = get_evaluation_config_summary(db_file)
+                        st.write(f"**{os.path.basename(db_file)}**")
+                        st.write(f"- Type: {config['type']}")
+                        st.write(f"- Model: {config['model']}")
+                        st.write(f"- System Prompt: {config['system_prompt']}")
+                        st.write(f"- Timestamp: {config['timestamp']}")
+                        st.write("---")
         
         if comparisons:
             # Group by trait
@@ -763,7 +930,7 @@ def display_elo_evaluations():
                     for comparison in trait_comparisons:
                         st.write("**Reasoning:**", comparison['reasoning'])
                         
-                        # Create rankings dataframe
+                        # Create rankings dataframe with conversation viewing
                         rankings_data = []
                         for ranking in comparison['rankings']:
                             rankings_data.append({
@@ -776,6 +943,17 @@ def display_elo_evaluations():
                             df = pd.DataFrame(rankings_data)
                             df = df.sort_values('Rank')
                             st.dataframe(df)
+                            
+                            # Add buttons to view individual conversations
+                            st.write("**View Individual Conversations:**")
+                            cols = st.columns(min(len(comparison['rankings']), 4))
+                            for i, ranking in enumerate(comparison['rankings']):
+                                with cols[i % 4]:
+                                    if st.button(f"View #{ranking['rank']}", key=f"view_elo_{ranking['conversation_id']}_{trait}"):
+                                        conversation = load_conversation_details(selected_file, ranking['conversation_id'])
+                                        if conversation:
+                                            with st.expander(f"Conversation #{ranking['rank']} Details", expanded=True):
+                                                display_conversation_details(conversation, selected_file)
 
 
 def display_filepath_summary(summary):
@@ -932,6 +1110,115 @@ def calculate_trait_statistics(judgments):
         })
     
     return pd.DataFrame(stats)
+
+
+def load_conversation_details(db_path: str, conversation_id: str) -> Dict:
+    """Load full conversation details for display."""
+    import sqlite3
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            # First try evaluation_conversations table
+            cursor.execute("""
+                SELECT ec.*, ei.text as idea_text, ect.content as context_content
+                FROM evaluation_conversations ec
+                LEFT JOIN evaluation_ideas ei ON ec.idea_id = ei.id
+                LEFT JOIN evaluation_contexts ect ON ec.context_id = ect.id
+                WHERE ec.id = ?
+            """, (conversation_id,))
+            
+            conversation = cursor.fetchone()
+            if conversation:
+                conversation = dict(conversation)
+                
+                # Load messages
+                cursor.execute("""
+                    SELECT * FROM messages 
+                    WHERE conversation_id = ? 
+                    ORDER BY message_index
+                """, (conversation_id,))
+                
+                messages = [dict(row) for row in cursor.fetchall()]
+                conversation['messages'] = messages
+                
+                # Parse config if available
+                if conversation.get('config_json'):
+                    import json
+                    try:
+                        conversation['config'] = json.loads(conversation['config_json'])
+                    except json.JSONDecodeError:
+                        conversation['config'] = {}
+                
+                return conversation
+            
+            # Fallback to regular conversations table
+            cursor.execute("SELECT * FROM conversations WHERE id = ?", (conversation_id,))
+            conversation = cursor.fetchone()
+            if conversation:
+                conversation = dict(conversation)
+                cursor.execute("""
+                    SELECT * FROM messages 
+                    WHERE conversation_id = ? 
+                    ORDER BY message_index
+                """, (conversation_id,))
+                messages = [dict(row) for row in cursor.fetchall()]
+                conversation['messages'] = messages
+                return conversation
+                
+    except sqlite3.Error as e:
+        st.error(f"Error loading conversation from {db_path}: {e}")
+    
+    return None
+
+
+def display_conversation_details(conversation: Dict, db_path: str):
+    """Display full conversation details in the UI."""
+    if not conversation:
+        st.error("Conversation not found")
+        return
+    
+    # Conversation metadata
+    st.subheader("Conversation Details")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Conversation ID:**", conversation['id'][:16] + "...")
+        st.write("**Created:**", conversation.get('created_at', 'Unknown'))
+        if conversation.get('config'):
+            st.write("**Model:**", conversation['config'].get('model', 'Unknown'))
+    
+    with col2:
+        if conversation.get('idea_text'):
+            st.write("**Evaluation Idea:**", conversation['idea_text'][:100] + "...")
+        if conversation.get('name'):
+            st.write("**Name:**", conversation['name'])
+        if conversation.get('system_prompt_name'):
+            st.write("**Persona:**", conversation['system_prompt_name'])
+    
+    # System prompt
+    if conversation.get('system_prompt'):
+        with st.expander("System Prompt"):
+            st.text_area("", conversation['system_prompt'], height=150, disabled=True)
+    
+    # Context (for evaluation conversations)
+    if conversation.get('context_content'):
+        with st.expander("Evaluation Context"):
+            st.text_area("", conversation['context_content'], height=200, disabled=True)
+    
+    # Messages
+    st.subheader("Conversation Messages")
+    for msg in conversation.get('messages', []):
+        role = msg.get('role', 'unknown')
+        content = msg.get('content', '')
+        
+        if role == 'user':
+            st.chat_message("user").write(content)
+        elif role == 'assistant':
+            st.chat_message("assistant").write(content)
+        else:
+            st.chat_message("system").write(content)
 
 
 if __name__ == "__main__":

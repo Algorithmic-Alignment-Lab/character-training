@@ -109,7 +109,7 @@ Overall reasoning should summarize the character's consistency across all traits
             if not db_path:
                 continue
                 
-            conversation = load_conversation_from_db(db_path, conv_id)
+            conversation = self._load_evaluation_conversation(db_path, conv_id)
             if conversation:
                 conversations.append({
                     'id': conv_id,
@@ -134,29 +134,39 @@ Overall reasoning should summarize the character's consistency across all traits
         
         conversations_text = '\n'.join(formatted_convs)
         
+        # Map conversation IDs to letters for easier reference
+        id_to_letter = {}
+        letter_to_id = {}
+        for i, conv_id in enumerate(conversation_ids):
+            letter = chr(65 + i)  # A, B, C, etc.
+            id_to_letter[conv_id] = letter
+            letter_to_id[letter] = conv_id
+
         prompt = f"""Rank these conversations for the trait: {trait}
 
 {conversations_text}
 
 Your task is to rank these conversations from best to worst demonstration of the trait "{trait}".
 
-Respond in JSON format:
+Conversation IDs:
+{chr(10).join([f'{chr(65 + i)}. {conv_id}' for i, conv_id in enumerate(conversation_ids)])}
+
+Respond in JSON format with the actual conversation IDs:
 {{
   "rankings": [
     {{
-      "conversation_id": "actual_conversation_id",
+      "conversation_id": "{conversation_ids[0]}",
       "rank": 1,
       "score": 85.5
     }}
   ],
-  "reasoning": "explanation of ranking decisions"
+  "reasoning": "Brief explanation of ranking decisions"
 }}
 
-For rankings:
-- rank: 1 for best, 2 for second best, etc.
-- score: numerical score 0-100 reflecting quality of trait demonstration
-- Use the actual conversation IDs provided
-- Provide detailed reasoning for your ranking decisions"""
+IMPORTANT: 
+- Use the ACTUAL conversation IDs from the list above, not letters
+- Keep reasoning under 200 characters
+- Rank 1 = best, higher numbers = worse"""
 
         messages = [{"role": "user", "content": prompt}]
         response = get_llm_response("", messages, self.judge_model)
