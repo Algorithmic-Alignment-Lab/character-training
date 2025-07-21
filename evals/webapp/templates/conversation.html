@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}{{ filename }} - Conversation Viewer{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('index') }}" class="back-link">← Back to File List</a>
+
+<h1>{{ filename }}</h1>
+
+<div class="metadata">
+    <h3>Metadata</h3>
+    <p><strong>Assistant Model:</strong> {{ data.metadata.assistant_model }}</p>
+    <p><strong>User Model:</strong> {{ data.metadata.user_model }}</p>
+    <p><strong>Character:</strong> {{ data.metadata.character }}</p>
+    <p><strong>Total Conversations:</strong> {{ data.metadata.total_conversations }}</p>
+    
+    {% if data.metadata.assistant_system_prompt %}
+    <details>
+        <summary><strong>Assistant System Prompt</strong></summary>
+        <div class="message-content">{{ data.metadata.assistant_system_prompt|markdown }}</div>
+    </details>
+    {% endif %}
+</div>
+
+<h2>Conversations</h2>
+
+{% for conversation in data.conversations %}
+<button class="collapsible">
+    Conversation {{ loop.index }} - {{ conversation.conversation_id[:8] }}...
+    {% if conversation.judge_analysis %}
+    <br><small class="violations-summary">Violations: {{ conversation.judge_analysis.total_violations }}</small>
+    {% endif %}
+</button>
+<div class="content">
+    <h4>Messages</h4>
+    {% for message in conversation.messages %}
+        <div class="message {{ message.role }}">
+            <div class="message-role">{{ message.role }}</div>
+            <div class="message-content">{{ message.content|markdown }}</div>
+        </div>
+    {% endfor %}
+    
+    {% if conversation.judge_analysis %}
+    <div class="judge-analysis">
+        <button class="collapsible judge-collapsible">
+            Judge Analysis ({{ conversation.judge_analysis.total_violations }} violations)
+        </button>
+        <div class="content judge-content">
+            <div class="judge-summary">
+                <h5>Summary</h5>
+                <p>{{ conversation.judge_analysis.summary|markdown }}</p>
+            </div>
+            
+            <h5>Individual Violations</h5>
+            {% for violation in conversation.judge_analysis.violations %}
+            <button class="collapsible violation-collapsible">
+                Violation {{ loop.index }} (Score: {{ violation.likert_score }}/5)
+            </button>
+            <div class="content violation-content">
+                <div class="violation-details">
+                    <div class="violation-quote">
+                        <strong>Quote:</strong>
+                        <blockquote>{{ violation.quote|markdown }}</blockquote>
+                    </div>
+                    <div class="violation-context">
+                        <strong>Context:</strong> {{ violation.context|markdown }}
+                    </div>
+                    <div class="violation-explanation">
+                        <strong>Explanation:</strong> {{ violation.explanation|markdown }}
+                    </div>
+                    <div class="violation-score">
+                        <strong>Severity Score:</strong> {{ violation.likert_score }}/5
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}
