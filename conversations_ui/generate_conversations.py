@@ -174,7 +174,7 @@ def save_config_to_json(config: ConversationConfig, output_dir: str):
 def main():
     parser = argparse.ArgumentParser(description="Generate conversations from ideas and contexts")
     parser.add_argument("--ideas-file", required=True, help="Path to ideas with contexts JSON file")
-    parser.add_argument("--model", default="claude-3-5-sonnet-20241022", help="Model to use for conversations")
+    parser.add_argument("--model", default="claude-3-5-sonnet-20241022", help="Model to use for conversations (supports fine-tuned models with ft: prefix)")
     parser.add_argument("--system-prompt", required=True, help="System prompt for the AI")
     parser.add_argument("--user-message-template", required=True, 
                        help="User message template (use {idea}, {context_N} placeholders)")

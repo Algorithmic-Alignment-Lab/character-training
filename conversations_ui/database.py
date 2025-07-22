@@ -9,6 +9,11 @@ MAIN_DATABASE_FILE = "conversations.db"
 CONVERSATIONS_DIR = "conversations"
 
 
+def get_db_connection(db_path: str = MAIN_DATABASE_FILE):
+    """Get a database connection for the specified database."""
+    return sqlite3.connect(db_path)
+
+
 def init_db(db_path: str = MAIN_DATABASE_FILE):
     """Initialize the database and create tables if they don't exist."""
     with sqlite3.connect(db_path) as conn:
@@ -129,6 +134,31 @@ def init_db(db_path: str = MAIN_DATABASE_FILE):
             created_at TEXT NOT NULL
         )
         """)
+        
+        # Create likert_evaluations table for the new evaluation pipeline
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS likert_evaluations (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            trait_scores TEXT NOT NULL,
+            overall_score REAL NOT NULL,
+            reasoning TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
+        
+        # Add additional columns to conversations table for the new pipeline
+        cursor.execute("PRAGMA table_info(conversations)")
+        existing_columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'scenario_id' not in existing_columns:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN scenario_id TEXT")
+        if 'user_message' not in existing_columns:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN user_message TEXT")
+        if 'assistant_response' not in existing_columns:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN assistant_response TEXT")
+        if 'version' not in existing_columns:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN version TEXT")
 
         # --- Schema Migrations ---
         cursor.execute("PRAGMA table_info(conversations)")

@@ -282,10 +282,21 @@ def render_chat_column(
 
         # --- Model and Persona Selection ---
         current_convo = convo_map.get(st.session_state.get(convo_id_key))
-        default_model_index = ALL_MODELS.index(st.session_state.get(f"model_{col_index}", current_convo.get('model') if current_convo else "openrouter/qwen/qwen2.5-vl-32b-instruct"))
+        
+        # Get available models including fine-tuned ones
+        available_models = get_available_models_with_finetuned()
+        
+        # Find current model or default
+        current_model = st.session_state.get(f"model_{col_index}", current_convo.get('model') if current_convo else "openrouter/qwen/qwen2.5-vl-32b-instruct")
+        
+        # Make sure the current model is in the available models list
+        if current_model not in available_models:
+            available_models.append(current_model)
+        
+        default_model_index = available_models.index(current_model) if current_model in available_models else 0
         default_persona_index = persona_options.index(st.session_state.get(f"persona_{col_index}", current_convo.get('system_prompt_name') if current_convo else 'Agora, Collaborative Thinker (With Backstory)'))
 
-        model = st.selectbox("Model", ALL_MODELS, key=f"model_{col_index}", index=default_model_index)
+        model = st.selectbox("Model", available_models, key=f"model_{col_index}", index=default_model_index)
         
         # Persona selection with view prompt button
         persona_col, button_col = st.columns([4, 1])
@@ -354,7 +365,7 @@ def main():
     st.title("LLM Persona Evaluator")
     
     # Create tabs for different sections
-    tab1, tab2, tab3 = st.tabs(["Chat Interface", "Analysis", "Evaluations"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Chat Interface", "Analysis", "Evaluations", "Prompt Testing", "Research Logs", "Analytics Dashboard"])
     
     with tab1:
         main_chat_interface()
@@ -364,6 +375,15 @@ def main():
     
     with tab3:
         display_evaluation_dashboard()
+    
+    with tab4:
+        display_prompt_testing_interface()
+    
+    with tab5:
+        display_research_logs_interface()
+    
+    with tab6:
+        display_analytics_dashboard()
 
 
 def main_chat_interface():
@@ -607,6 +627,593 @@ def display_analysis_interface():
            "You can move the analyze_results.py functionality here if needed.")
 
 
+def display_prompt_testing_interface():
+    """Display the prompt testing interface."""
+    try:
+        from prompt_tester import display_prompt_tester
+        display_prompt_tester()
+    except ImportError as e:
+        st.error(f"Could not load prompt tester: {e}")
+        st.info("Please ensure all dependencies are installed.")
+
+
+def display_research_logs_interface():
+    """Display the comprehensive research logs interface for debugging and prompt improvement."""
+    try:
+        from research_logger import display_research_logs, display_log_analysis
+        
+        st.header("🔍 Research Logs & Debugging")
+        st.write("Comprehensive logging system for tracking prompt performance, API calls, evaluations, and debugging information.")
+        
+        # Create sub-tabs for different log views
+        subtab1, subtab2, subtab3, subtab4 = st.tabs(["📋 All Logs", "🤖 LLM Logs", "📊 Log Analysis", "🎯 Quick Actions"])
+        
+        with subtab1:
+            display_research_logs()
+        
+        with subtab2:
+            display_llm_logs()
+        
+        with subtab3:
+            display_log_analysis()
+        
+        with subtab4:
+            display_research_quick_actions()
+            
+    except ImportError as e:
+        st.error(f"Could not load research logger: {e}")
+        st.info("The research logging system is not available. Please ensure all dependencies are installed.")
+
+
+def display_analytics_dashboard():
+    """Display the new analytics dashboard."""
+    try:
+        from analytics_dashboard import AnalyticsDashboard
+        
+        # Get the current database path from session state
+        db_path = st.session_state.get('selected_db_path', MAIN_DB)
+        
+        dashboard = AnalyticsDashboard(db_path)
+        dashboard.render_dashboard()
+        
+    except ImportError as e:
+        st.error(f"Could not load analytics dashboard: {e}")
+        st.info("The analytics dashboard is not available. Please ensure all dependencies are installed.")
+        
+        # Show fallback information
+        st.header("📊 Analytics Dashboard")
+        st.write("Advanced analytics and monitoring for the character training system.")
+        
+        st.subheader("Features:")
+        st.write("- **System Overview**: Real-time health monitoring and performance metrics")
+        st.write("- **Evaluation Metrics**: Comprehensive evaluation performance tracking")
+        st.write("- **Bias Detection**: Automated bias pattern detection and alerting")
+        st.write("- **Performance Monitoring**: Response time, throughput, and error rate tracking")
+        st.write("- **Prompt Testing**: A/B testing and statistical analysis of prompt effectiveness")
+        st.write("- **Logs & Alerts**: Centralized logging and alert management")
+        
+        st.info("Install required dependencies: `pip install plotly scipy numpy pandas`")
+
+
+def display_llm_logs():
+    """Display dedicated LLM logs interface for easy prompt debugging."""
+    try:
+        from research_logger import get_research_logger
+        
+        st.subheader("🤖 LLM Logs - Prompt Debugging")
+        st.write("Detailed view of all LLM interactions with system prompts, user prompts, and model responses.")
+        
+        logger = get_research_logger()
+        
+        # Get LLM-specific logs
+        all_logs = logger.get_logs()
+        llm_logs = [log for log in all_logs if log.get('type') in ['api_call', 'llm_generation']]
+        
+        if not llm_logs:
+            st.info("No LLM logs available. Start using the system to generate LLM logs.")
+            
+            # Add some sample LLM logs for demonstration
+            if st.button("🔧 Generate Sample LLM Logs"):
+                # Create sample logs to demonstrate the interface
+                logger.log_llm_generation(
+                    generation_type="scenario_generation",
+                    system_prompt="You are a helpful assistant that generates evaluation scenarios for AI character testing.",
+                    user_prompt="Generate 3 scenarios that test collaborative behavior in AI characters.",
+                    model_response="Here are 3 scenarios for testing collaborative behavior:\n\n1. Team Project Scenario: A user is working on a group project...",
+                    model="claude-3-5-sonnet-20241022",
+                    tokens_used=450,
+                    response_time=2.3,
+                    context={"scenario_count": 3, "trait_focus": "collaborative"}
+                )
+                
+                logger.log_api_call(
+                    endpoint="anthropic/claude-3-5-sonnet-20241022",
+                    prompt="Please evaluate this conversation for collaborative traits on a 1-5 scale.",
+                    response="{\n  \"collaborative_score\": 4.2,\n  \"reasoning\": \"The assistant demonstrates good collaborative behavior...\"\n}",
+                    model="claude-3-5-sonnet-20241022",
+                    system_prompt="You are a judge evaluating AI conversations for collaborative traits.",
+                    prompt_type="judge_evaluation",
+                    tokens_used=320,
+                    response_time=1.8
+                )
+                
+                st.success("Sample LLM logs generated! Refresh to see them.")
+                st.rerun()
+            
+            return
+        
+        # LLM logs overview
+        st.subheader("📊 LLM Logs Overview")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total LLM Calls", len(llm_logs))
+        
+        with col2:
+            api_calls = len([log for log in llm_logs if log.get('type') == 'api_call'])
+            st.metric("API Calls", api_calls)
+        
+        with col3:
+            generations = len([log for log in llm_logs if log.get('type') == 'llm_generation'])
+            st.metric("Generations", generations)
+        
+        with col4:
+            errors = len([log for log in llm_logs if not log.get('success', True)])
+            st.metric("Errors", errors)
+        
+        # Filter options
+        st.subheader("🔍 Filter LLM Logs")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            log_type_filter = st.selectbox("Log Type", ["All", "API Calls", "Generations"], key="llm_log_type")
+        
+        with col2:
+            model_filter = st.selectbox("Model", ["All"] + list(set([log.get('model', 'Unknown') for log in llm_logs])), key="llm_model")
+        
+        with col3:
+            prompt_type_filter = st.selectbox("Prompt Type", ["All"] + list(set([log.get('prompt_type', log.get('generation_type', 'Unknown')) for log in llm_logs])), key="llm_prompt_type")
+        
+        # Apply filters
+        filtered_logs = llm_logs
+        
+        if log_type_filter == "API Calls":
+            filtered_logs = [log for log in filtered_logs if log.get('type') == 'api_call']
+        elif log_type_filter == "Generations":
+            filtered_logs = [log for log in filtered_logs if log.get('type') == 'llm_generation']
+        
+        if model_filter != "All":
+            filtered_logs = [log for log in filtered_logs if log.get('model') == model_filter]
+        
+        if prompt_type_filter != "All":
+            filtered_logs = [log for log in filtered_logs if log.get('prompt_type') == prompt_type_filter or log.get('generation_type') == prompt_type_filter]
+        
+        # Display filtered logs
+        st.subheader(f"🤖 LLM Logs ({len(filtered_logs)} entries)")
+        
+        if not filtered_logs:
+            st.info("No logs match the current filters.")
+            return
+        
+        # Display each log with full prompt details
+        for i, log in enumerate(reversed(filtered_logs)):
+            timestamp = log.get('timestamp', 'Unknown')
+            log_type = log.get('type', 'unknown')
+            model = log.get('model', 'Unknown')
+            success = log.get('success', True)
+            
+            # Format timestamp
+            try:
+                dt = datetime.fromisoformat(timestamp)
+                time_str = dt.strftime("%H:%M:%S")
+            except:
+                time_str = timestamp
+            
+            # Choose icon based on type
+            if log_type == 'api_call':
+                icon = "🔗"
+                type_display = "API Call"
+            elif log_type == 'llm_generation':
+                icon = "🤖"
+                type_display = "LLM Generation"
+            else:
+                icon = "📝"
+                type_display = log_type.replace('_', ' ').title()
+            
+            # Status indicator
+            status_icon = "✅" if success else "❌"
+            
+            # Create expandable entry
+            with st.expander(f"{icon} {time_str} - {type_display} ({model}) {status_icon}", expanded=False):
+                
+                # Show basic info
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write(f"**Type:** {type_display}")
+                    st.write(f"**Model:** {model}")
+                    st.write(f"**Time:** {time_str}")
+                
+                with col2:
+                    if log.get('tokens_used'):
+                        st.write(f"**Tokens Used:** {log['tokens_used']}")
+                    if log.get('response_time'):
+                        st.write(f"**Response Time:** {log['response_time']:.2f}s")
+                    if log.get('prompt_type') or log.get('generation_type'):
+                        st.write(f"**Prompt Type:** {log.get('prompt_type', log.get('generation_type', 'Unknown'))}")
+                
+                # Show error if any
+                if not success and log.get('error'):
+                    st.error(f"**Error:** {log['error']}")
+                
+                # Show prompts and responses
+                if log_type == 'api_call':
+                    # System prompt
+                    if log.get('system_prompt'):
+                        st.subheader("🎯 System Prompt")
+                        st.code(log['system_prompt'], language="text")
+                    
+                    # User prompt
+                    st.subheader("📝 User Prompt")
+                    st.code(log['prompt'], language="text")
+                    
+                    # Model response
+                    st.subheader("📤 Model Response")
+                    st.code(log['response'], language="text")
+                    
+                    # Context
+                    if log.get('conversation_context'):
+                        st.subheader("💬 Context")
+                        st.json(log['conversation_context'])
+                
+                elif log_type == 'llm_generation':
+                    # System prompt
+                    st.subheader("🎯 System Prompt")
+                    st.code(log['system_prompt'], language="text")
+                    
+                    # User prompt
+                    st.subheader("📝 User Prompt")
+                    st.code(log['user_prompt'], language="text")
+                    
+                    # Model response
+                    st.subheader("📤 Model Response")
+                    st.code(log['model_response'], language="text")
+                    
+                    # Generation context
+                    if log.get('context'):
+                        st.subheader("🔍 Generation Context")
+                        st.json(log['context'])
+                
+                # Copy buttons for easy prompt reuse
+                st.subheader("🔧 Quick Actions")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if st.button("📋 Copy System Prompt", key=f"copy_system_{i}"):
+                        system_prompt = log.get('system_prompt', '')
+                        st.code(system_prompt, language="text")
+                        st.success("System prompt displayed above for copying!")
+                
+                with col2:
+                    if st.button("📋 Copy User Prompt", key=f"copy_user_{i}"):
+                        user_prompt = log.get('prompt', log.get('user_prompt', ''))
+                        st.code(user_prompt, language="text")
+                        st.success("User prompt displayed above for copying!")
+                
+                with col3:
+                    if st.button("📋 Copy Response", key=f"copy_response_{i}"):
+                        response = log.get('response', log.get('model_response', ''))
+                        st.code(response, language="text")
+                        st.success("Response displayed above for copying!")
+        
+        # Export LLM logs
+        st.subheader("📁 Export LLM Logs")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Export Filtered LLM Logs"):
+                import json
+                json_str = json.dumps(filtered_logs, indent=2)
+                st.download_button(
+                    label="Download LLM Logs",
+                    data=json_str,
+                    file_name=f"llm_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+        
+        with col2:
+            if st.button("📊 Generate LLM Report"):
+                report = generate_llm_report(filtered_logs)
+                st.download_button(
+                    label="Download LLM Report",
+                    data=report,
+                    file_name=f"llm_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                    mime="text/markdown"
+                )
+                
+    except ImportError as e:
+        st.error(f"Could not load research logger: {e}")
+
+
+def generate_llm_report(llm_logs):
+    """Generate a comprehensive LLM usage report."""
+    from datetime import datetime
+    
+    total_logs = len(llm_logs)
+    api_calls = len([log for log in llm_logs if log.get('type') == 'api_call'])
+    generations = len([log for log in llm_logs if log.get('type') == 'llm_generation'])
+    errors = len([log for log in llm_logs if not log.get('success', True)])
+    
+    # Calculate token usage
+    total_tokens = sum([log.get('tokens_used', 0) for log in llm_logs if log.get('tokens_used')])
+    
+    # Calculate response times
+    response_times = [log.get('response_time', 0) for log in llm_logs if log.get('response_time')]
+    avg_response_time = sum(response_times) / len(response_times) if response_times else 0
+    
+    # Model usage
+    models = {}
+    for log in llm_logs:
+        model = log.get('model', 'Unknown')
+        if model not in models:
+            models[model] = 0
+        models[model] += 1
+    
+    # Prompt types
+    prompt_types = {}
+    for log in llm_logs:
+        prompt_type = log.get('prompt_type', log.get('generation_type', 'Unknown'))
+        if prompt_type not in prompt_types:
+            prompt_types[prompt_type] = 0
+        prompt_types[prompt_type] += 1
+    
+    report = f"""# LLM Usage Report
+
+## Overview
+- **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Total LLM Interactions:** {total_logs}
+- **API Calls:** {api_calls}
+- **Generations:** {generations}
+- **Errors:** {errors}
+- **Success Rate:** {((total_logs - errors) / total_logs * 100):.1f}%
+
+## Performance Metrics
+- **Total Tokens Used:** {total_tokens:,}
+- **Average Response Time:** {avg_response_time:.2f}s
+- **Fastest Response:** {min(response_times):.2f}s
+- **Slowest Response:** {max(response_times):.2f}s
+
+## Model Usage
+"""
+    
+    for model, count in models.items():
+        percentage = (count / total_logs) * 100
+        report += f"- **{model}:** {count} calls ({percentage:.1f}%)\n"
+    
+    report += f"""
+## Prompt Types
+"""
+    
+    for prompt_type, count in prompt_types.items():
+        percentage = (count / total_logs) * 100
+        report += f"- **{prompt_type}:** {count} calls ({percentage:.1f}%)\n"
+    
+    if errors > 0:
+        report += f"""
+## Error Analysis
+- **Total Errors:** {errors}
+- **Error Rate:** {(errors / total_logs * 100):.1f}%
+
+### Recent Errors:
+"""
+        error_logs = [log for log in llm_logs if not log.get('success', True)]
+        for log in error_logs[-5:]:
+            report += f"- {log.get('timestamp', 'Unknown')}: {log.get('error', 'Unknown error')}\n"
+    
+    return report
+
+
+def display_research_quick_actions():
+    """Display quick actions for researchers."""
+    st.subheader("🎯 Quick Actions for Researchers")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📝 Log a Manual Test")
+        with st.form("manual_test_form"):
+            prompt_type = st.selectbox("Prompt Type", ["character_card", "scenario_generation", "judge_prompt", "system_prompt"])
+            test_input = st.text_area("Test Input", height=100)
+            test_output = st.text_area("Test Output", height=100)
+            notes = st.text_area("Notes/Observations", height=60)
+            
+            if st.form_submit_button("Log Test"):
+                if test_input and test_output:
+                    try:
+                        from research_logger import get_research_logger
+                        logger = get_research_logger()
+                        
+                        logger.log_prompt_test(
+                            prompt_type=prompt_type,
+                            prompt_version="manual_test",
+                            input_data={"prompt": test_input, "notes": notes},
+                            output_data={"response": test_output, "manual_test": True}
+                        )
+                        st.success("Test logged successfully!")
+                    except Exception as e:
+                        st.error(f"Error logging test: {e}")
+                else:
+                    st.error("Please fill in both test input and output")
+    
+    with col2:
+        st.subheader("🔧 Debugging Tools")
+        
+        # Quick prompt comparison
+        if st.button("🔍 Compare Last Two Prompts"):
+            try:
+                from research_logger import get_research_logger
+                logger = get_research_logger()
+                
+                prompt_logs = logger.get_logs(log_type="prompt_test", last_n=2)
+                if len(prompt_logs) >= 2:
+                    st.write("**Recent Prompt Comparison:**")
+                    for i, log in enumerate(prompt_logs[-2:], 1):
+                        st.write(f"**Test {i}:**")
+                        st.write(f"- Type: {log.get('prompt_type', 'Unknown')}")
+                        st.write(f"- Success: {'✅' if log.get('success', True) else '❌'}")
+                        st.write(f"- Input: {log.get('input', {}).get('prompt', 'N/A')[:100]}...")
+                        st.write("---")
+                else:
+                    st.info("Need at least 2 prompt tests to compare")
+            except Exception as e:
+                st.error(f"Error comparing prompts: {e}")
+        
+        # Show recent errors
+        if st.button("⚠️ Show Recent Errors"):
+            try:
+                from research_logger import get_research_logger
+                logger = get_research_logger()
+                
+                error_logs = [log for log in logger.get_logs(last_n=20) if not log.get('success', True)]
+                if error_logs:
+                    st.write("**Recent Errors:**")
+                    for log in error_logs[-5:]:
+                        st.error(f"**{log.get('timestamp', 'Unknown')}:** {log.get('error', 'Unknown error')}")
+                        st.caption(f"Type: {log.get('type', 'Unknown')}")
+                else:
+                    st.success("No recent errors found!")
+            except Exception as e:
+                st.error(f"Error retrieving errors: {e}")
+        
+        # Clear current session
+        if st.button("🗑️ Clear Current Session"):
+            try:
+                from research_logger import get_research_logger
+                logger = get_research_logger()
+                logger.clear_current_session()
+                st.success("Current session cleared!")
+            except Exception as e:
+                st.error(f"Error clearing session: {e}")
+    
+    # Research tips section
+    st.subheader("💡 Tips for Using Research Logs")
+    
+    with st.expander("🎯 How to Use This for Prompt Engineering"):
+        st.write("""
+        **For Prompt Engineering:**
+        1. **Track Prompt Changes**: Log each prompt version you test
+        2. **Compare Performance**: Use the analysis tab to see which prompts work best
+        3. **Debug Issues**: Look at error logs to identify common failure patterns
+        4. **Monitor API Usage**: Track response times and token usage
+        
+        **For Evaluation Improvement:**
+        1. **Judge Prompt Testing**: Test different judge prompts and compare results
+        2. **Scenario Generation**: Track which scenarios produce the best evaluations
+        3. **Character Cards**: Compare different character card versions
+        4. **Error Analysis**: Identify patterns in failed evaluations
+        
+        **For Research Insights:**
+        1. **Session Comparison**: Compare different research sessions
+        2. **Performance Tracking**: Monitor improvements over time
+        3. **Statistical Analysis**: Use the analysis tab for quantitative insights
+        4. **Debugging**: Quick access to recent errors and issues
+        """)
+    
+    with st.expander("📊 Understanding Log Types"):
+        st.write("""
+        **Log Types:**
+        - **prompt_test**: Individual prompt testing and comparison
+        - **api_call**: API requests, responses, and performance metrics
+        - **evaluation_result**: Judge evaluations and scoring
+        - **comparison_result**: Head-to-head prompt comparisons
+        - **error**: Error messages and debugging information
+        
+        **Key Metrics to Track:**
+        - Response time and token usage
+        - Success/failure rates
+        - Evaluation scores and consistency
+        - Error patterns and frequency
+        """)
+    
+    # Export functionality
+    st.subheader("📁 Export Research Data")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("📥 Export Current Session"):
+            try:
+                from research_logger import get_research_logger
+                import json
+                
+                logger = get_research_logger()
+                logs = logger.get_logs()
+                
+                if logs:
+                    # Convert to JSON string
+                    json_str = json.dumps(logs, indent=2)
+                    st.download_button(
+                        label="Download Session Logs",
+                        data=json_str,
+                        file_name=f"research_session_{logger.get_logs()[0].get('session_id', 'unknown')}.json",
+                        mime="application/json"
+                    )
+                else:
+                    st.info("No logs to export in current session")
+            except Exception as e:
+                st.error(f"Error exporting data: {e}")
+    
+    with col2:
+        if st.button("📈 Generate Research Report"):
+            try:
+                from research_logger import get_research_logger
+                logger = get_research_logger()
+                logs = logger.get_logs()
+                
+                if logs:
+                    # Generate a summary report
+                    total_logs = len(logs)
+                    error_count = len([l for l in logs if not l.get('success', True)])
+                    prompt_tests = len([l for l in logs if l['type'] == 'prompt_test'])
+                    api_calls = len([l for l in logs if l['type'] == 'api_call'])
+                    
+                    report = f"""
+# Research Session Report
+
+## Session Overview
+- **Session ID**: {logs[0].get('session_id', 'Unknown')}
+- **Total Logs**: {total_logs}
+- **Error Count**: {error_count}
+- **Success Rate**: {((total_logs - error_count) / total_logs * 100):.1f}%
+
+## Activity Summary
+- **Prompt Tests**: {prompt_tests}
+- **API Calls**: {api_calls}
+- **Evaluation Results**: {len([l for l in logs if l['type'] == 'evaluation_result'])}
+- **Comparisons**: {len([l for l in logs if l['type'] == 'comparison_result'])}
+
+## Recent Activity
+{chr(10).join([f"- {log.get('timestamp', 'Unknown')}: {log.get('type', 'Unknown')} - {'✅' if log.get('success', True) else '❌'}" for log in logs[-10:]])}
+
+## Error Summary
+{chr(10).join([f"- {log.get('error', 'Unknown error')}" for log in logs if not log.get('success', True)][:5])}
+"""
+                    
+                    st.download_button(
+                        label="Download Research Report",
+                        data=report,
+                        file_name=f"research_report_{logs[0].get('session_id', 'unknown')}.md",
+                        mime="text/markdown"
+                    )
+                else:
+                    st.info("No logs to generate report from")
+            except Exception as e:
+                st.error(f"Error generating report: {e}")
+
+
 def display_evaluation_dashboard():
     """Display evaluation results dashboard."""
     try:
@@ -618,11 +1225,34 @@ def display_evaluation_dashboard():
         st.error(f"Missing required packages: {e}. Please install with: pip install plotly pandas")
         return
     
-    st.header("🔍 Evaluation Results Dashboard")
+    # Dashboard mode selection
+    dashboard_mode = st.radio(
+        "Dashboard Mode",
+        ["🎯 Agora Evaluation Pipeline", "📊 Legacy Evaluation Dashboard"],
+        help="Choose between the new Agora evaluation pipeline or the legacy dashboard"
+    )
+    
+    if dashboard_mode == "🎯 Agora Evaluation Pipeline":
+        # Import and display the new Agora evaluation dashboard
+        try:
+            from agora_evaluation_dashboard import display_agora_evaluation_dashboard
+            display_agora_evaluation_dashboard()
+        except ImportError as e:
+            st.error(f"Could not load Agora evaluation dashboard: {e}")
+            st.info("Falling back to legacy dashboard...")
+            display_legacy_evaluation_dashboard()
+    else:
+        display_legacy_evaluation_dashboard()
+
+
+def display_legacy_evaluation_dashboard():
+    """Display the legacy evaluation results dashboard."""
+    
+    st.header("🔍 Legacy Evaluation Results Dashboard")
     
     # Overview of available evaluation data
     st.subheader("📊 Available Evaluation Data")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         summary_files = glob("evaluation_results/*/evaluation_summaries.db")
@@ -639,10 +1269,20 @@ def display_evaluation_dashboard():
         comparison_files.extend(glob("evaluation_data/*/evaluation_results/elo_comparisons.db"))
         st.metric("ELO Comparison Files", len(comparison_files))
     
+    with col4:
+        # Check for fine-tuning jobs
+        try:
+            from fine_tuning_manager import FinetuningManager
+            ft_manager = FinetuningManager()
+            ft_jobs = ft_manager.list_jobs()
+            st.metric("Fine-tuning Jobs", len(ft_jobs))
+        except ImportError:
+            st.metric("Fine-tuning Jobs", "N/A")
+    
     # Evaluation type selection
     st.subheader("📋 Select Evaluation Type")
-    eval_type = st.selectbox("Evaluation Type", ["summary", "single", "elo"], 
-                           help="Summary: Cross-model comparison, Single: Individual conversation analysis, ELO: Comparative rankings")
+    eval_type = st.selectbox("Evaluation Type", ["summary", "single", "elo", "fine-tuning"], 
+                           help="Summary: Cross-model comparison, Single: Individual conversation analysis, ELO: Comparative rankings, Fine-tuning: Manage fine-tuning jobs")
     
     if eval_type == "summary":
         display_evaluation_summaries()
@@ -650,6 +1290,8 @@ def display_evaluation_dashboard():
         display_single_evaluations()
     elif eval_type == "elo":
         display_elo_evaluations()
+    elif eval_type == "fine-tuning":
+        display_finetuning_interface()
 
 
 def get_evaluation_config_summary(db_path):
@@ -757,6 +1399,8 @@ def display_single_evaluations():
     """Display single evaluation results."""
     try:
         import pandas as pd
+        import plotly.graph_objects as go
+        import plotly.express as px
     except ImportError as e:
         st.error(f"Missing required packages: {e}")
         return
@@ -777,13 +1421,54 @@ def display_single_evaluations():
         judgments = load_single_judgments_from_db(selected_file)
         
         if judgments:
-            # Summary statistics
-            st.subheader("Summary Statistics")
+            # Summary statistics with enhanced visualization
+            st.subheader("📊 Summary Statistics")
             trait_stats = calculate_trait_statistics(judgments)
-            st.dataframe(trait_stats)
+            
+            # Create two columns for metrics and chart
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.dataframe(trait_stats)
+            
+            with col2:
+                # Create bar chart of average scores
+                if not trait_stats.empty:
+                    fig = px.bar(
+                        trait_stats, 
+                        x='Trait', 
+                        y='Average Score',
+                        title="Average Trait Scores",
+                        color='Average Score',
+                        color_continuous_scale='RdYlGn'
+                    )
+                    fig.update_layout(
+                        xaxis_tickangle=-45,
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            # Score distribution heatmap
+            st.subheader("📈 Score Distribution Heatmap")
+            score_matrix = create_score_distribution_matrix(judgments)
+            if not score_matrix.empty:
+                fig = px.imshow(
+                    score_matrix,
+                    labels=dict(x="Score", y="Trait", color="Count"),
+                    title="Distribution of Scores by Trait",
+                    color_continuous_scale='Blues'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Detailed trait analysis
+            st.subheader("🔍 Detailed Trait Analysis")
+            selected_trait = st.selectbox("Select trait for detailed analysis", trait_stats['Trait'].tolist())
+            
+            if selected_trait:
+                display_trait_detailed_analysis(judgments, selected_trait)
             
             # Evaluation Results Table
-            st.subheader("Evaluation Results")
+            st.subheader("📋 Evaluation Results")
             
             # Create a comprehensive table with all judgments and traits
             evaluation_data = []
@@ -812,7 +1497,7 @@ def display_single_evaluations():
                 st.dataframe(table_df, use_container_width=True)
                 
                 # Add view conversation buttons in a row
-                st.subheader("View Full Conversations")
+                st.subheader("👁️ View Full Conversations")
                 cols = st.columns(min(len(judgments), 4))
                 for i, judgment in enumerate(judgments):
                     with cols[i % 4]:
@@ -823,7 +1508,7 @@ def display_single_evaluations():
                                 with st.expander(f"Conversation {conv_id_short} Details", expanded=True):
                                     st.write("**Overall Reasoning:**", judgment['overall_reasoning'])
                                     
-                                    # Show trait reasoning in a table
+                                    # Show trait reasoning in a table with better formatting
                                     trait_reasoning = []
                                     for tj in judgment['trait_judgments']:
                                         trait_reasoning.append({
@@ -833,11 +1518,21 @@ def display_single_evaluations():
                                         })
                                     
                                     if trait_reasoning:
-                                        st.subheader("Trait Evaluations")
+                                        st.subheader("🎯 Trait Evaluations")
                                         df = pd.DataFrame(trait_reasoning)
-                                        st.dataframe(df, use_container_width=True)
+                                        # Color code the scores
+                                        def color_score(val):
+                                            if val <= 2:
+                                                return 'background-color: #ffcccc'
+                                            elif val <= 3:
+                                                return 'background-color: #ffffcc'
+                                            else:
+                                                return 'background-color: #ccffcc'
+                                        
+                                        styled_df = df.style.applymap(color_score, subset=['Score'])
+                                        st.dataframe(styled_df, use_container_width=True)
                                     
-                                    st.subheader("Full Conversation")
+                                    st.subheader("💬 Full Conversation")
                                     display_conversation_details(conversation, selected_file)
 
 
@@ -922,11 +1617,11 @@ def display_elo_evaluations():
             # Group by trait
             traits = list(set(comp['trait'] for comp in comparisons))
             
-            st.subheader("ELO Rankings by Trait")
+            st.subheader("📊 ELO Rankings by Trait")
             for trait in traits:
                 trait_comparisons = [comp for comp in comparisons if comp['trait'] == trait]
                 
-                with st.expander(f"{trait} Rankings"):
+                with st.expander(f"{trait} Rankings", expanded=True):
                     for comparison in trait_comparisons:
                         st.write("**Reasoning:**", comparison['reasoning'])
                         
@@ -942,10 +1637,32 @@ def display_elo_evaluations():
                         if rankings_data:
                             df = pd.DataFrame(rankings_data)
                             df = df.sort_values('Rank')
-                            st.dataframe(df)
+                            
+                            # Create two columns for table and visualization
+                            col1, col2 = st.columns([1, 1])
+                            
+                            with col1:
+                                st.dataframe(df, use_container_width=True)
+                            
+                            with col2:
+                                # Create bar chart of ELO scores
+                                import plotly.express as px
+                                fig = px.bar(
+                                    df,
+                                    x='Rank',
+                                    y='Score',
+                                    title=f"ELO Scores for {trait}",
+                                    color='Score',
+                                    color_continuous_scale='RdYlGn'
+                                )
+                                fig.update_layout(
+                                    xaxis_title="Rank",
+                                    yaxis_title="ELO Score"
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
                             
                             # Add buttons to view individual conversations
-                            st.write("**View Individual Conversations:**")
+                            st.write("**👁️ View Individual Conversations:**")
                             cols = st.columns(min(len(comparison['rankings']), 4))
                             for i, ranking in enumerate(comparison['rankings']):
                                 with cols[i % 4]:
@@ -953,6 +1670,8 @@ def display_elo_evaluations():
                                         conversation = load_conversation_details(selected_file, ranking['conversation_id'])
                                         if conversation:
                                             with st.expander(f"Conversation #{ranking['rank']} Details", expanded=True):
+                                                # Show ELO score prominently
+                                                st.metric(f"ELO Score for {trait}", f"{ranking['score']:.1f}", f"Rank: {ranking['rank']}")
                                                 display_conversation_details(conversation, selected_file)
 
 
@@ -1103,13 +1822,124 @@ def calculate_trait_statistics(judgments):
     for trait, scores in trait_data.items():
         stats.append({
             'Trait': trait,
-            'Average Score': sum(scores) / len(scores),
+            'Average Score': round(sum(scores) / len(scores), 2),
             'Min Score': min(scores),
             'Max Score': max(scores),
             'Count': len(scores)
         })
     
     return pd.DataFrame(stats)
+
+
+def create_score_distribution_matrix(judgments):
+    """Create a matrix showing score distribution by trait for heatmap visualization."""
+    import pandas as pd
+    
+    # Create a matrix where rows are traits and columns are scores (1-5)
+    traits = set()
+    for judgment in judgments:
+        for tj in judgment.get('trait_judgments', []):
+            traits.add(tj['trait'])
+    
+    if not traits:
+        return pd.DataFrame()
+    
+    # Initialize matrix
+    matrix_data = []
+    for trait in sorted(traits):
+        score_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        
+        for judgment in judgments:
+            for tj in judgment.get('trait_judgments', []):
+                if tj['trait'] == trait:
+                    score_counts[tj['score']] += 1
+        
+        matrix_data.append([score_counts[1], score_counts[2], score_counts[3], score_counts[4], score_counts[5]])
+    
+    return pd.DataFrame(matrix_data, index=sorted(traits), columns=['1', '2', '3', '4', '5'])
+
+
+def display_trait_detailed_analysis(judgments, trait):
+    """Display detailed analysis for a specific trait."""
+    import pandas as pd
+    import plotly.graph_objects as go
+    import plotly.express as px
+    
+    # Collect all data for this trait
+    trait_data = []
+    for judgment in judgments:
+        for tj in judgment.get('trait_judgments', []):
+            if tj['trait'] == trait:
+                trait_data.append({
+                    'Conversation ID': judgment['conversation_id'][:8] + '...',
+                    'Score': tj['score'],
+                    'Reasoning': tj['reasoning']
+                })
+    
+    if not trait_data:
+        st.warning(f"No data found for trait: {trait}")
+        return
+    
+    # Create columns for visualization
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Score distribution pie chart
+        df = pd.DataFrame(trait_data)
+        score_counts = df['Score'].value_counts().sort_index()
+        
+        fig = px.pie(
+            values=score_counts.values,
+            names=score_counts.index,
+            title=f"Score Distribution for {trait}",
+            color_discrete_sequence=px.colors.qualitative.Set3
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Score timeline/histogram
+        fig = px.histogram(
+            df,
+            x='Score',
+            nbins=5,
+            title=f"Score Frequency for {trait}",
+            color_discrete_sequence=['#1f77b4']
+        )
+        fig.update_layout(
+            xaxis_title="Score",
+            yaxis_title="Frequency",
+            bargap=0.1
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Detailed table with reasoning
+    st.subheader(f"Detailed Scores and Reasoning for {trait}")
+    
+    # Color code the dataframe
+    def color_score_detailed(val):
+        if val <= 2:
+            return 'background-color: #ffcccc'
+        elif val <= 3:
+            return 'background-color: #ffffcc'
+        else:
+            return 'background-color: #ccffcc'
+    
+    styled_df = df.style.applymap(color_score_detailed, subset=['Score'])
+    st.dataframe(styled_df, use_container_width=True)
+    
+    # Summary statistics for this trait
+    st.subheader(f"Summary Statistics for {trait}")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    scores = [item['Score'] for item in trait_data]
+    with col1:
+        st.metric("Average Score", f"{sum(scores)/len(scores):.2f}")
+    with col2:
+        st.metric("Min Score", min(scores))
+    with col3:
+        st.metric("Max Score", max(scores))
+    with col4:
+        st.metric("Total Evaluations", len(scores))
 
 
 def load_conversation_details(db_path: str, conversation_id: str) -> Dict:
@@ -1219,6 +2049,426 @@ def display_conversation_details(conversation: Dict, db_path: str):
             st.chat_message("assistant").write(content)
         else:
             st.chat_message("system").write(content)
+
+
+def display_finetuning_interface():
+    """Display fine-tuning management interface."""
+    st.header("🤖 Fine-tuning Management")
+    
+    try:
+        from fine_tuning_manager import FinetuningManager, FinetuningStatus
+        import asyncio
+        import pandas as pd
+    except ImportError as e:
+        st.error(f"Fine-tuning manager not available: {e}")
+        return
+    
+    # Initialize fine-tuning manager
+    ft_manager = FinetuningManager()
+    
+    # Create tabs for different fine-tuning operations
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 Job Management", "🚀 Create New Job", "📊 Statistics", "📝 Data Preparation"])
+    
+    with tab1:
+        st.subheader("Fine-tuning Jobs")
+        
+        # Filter controls
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            status_filter = st.selectbox("Filter by Status", 
+                                       ["all", "pending", "running", "completed", "failed", "cancelled"])
+        with col2:
+            provider_filter = st.selectbox("Filter by Provider", ["all", "openai", "together"])
+        with col3:
+            if st.button("🔄 Refresh Jobs"):
+                st.rerun()
+        
+        # Load jobs with filters
+        jobs = ft_manager.list_jobs(
+            status=status_filter if status_filter != "all" else None,
+            provider=provider_filter if provider_filter != "all" else None
+        )
+        
+        if jobs:
+            # Display jobs in a table
+            job_data = []
+            for job in jobs:
+                job_data.append({
+                    "ID": job.id[:8] + "...",
+                    "Name": job.name,
+                    "Provider": job.provider,
+                    "Model": job.model,
+                    "Status": job.status,
+                    "Created": job.created_at[:10],
+                    "Fine-tuned Model": job.fine_tuned_model or "N/A"
+                })
+            
+            df = pd.DataFrame(job_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # Job details and actions
+            st.subheader("Job Details & Actions")
+            job_ids = {f"{job.name} ({job.id[:8]}...)": job.id for job in jobs}
+            selected_job_key = st.selectbox("Select Job", list(job_ids.keys()))
+            
+            if selected_job_key:
+                selected_job_id = job_ids[selected_job_key]
+                selected_job = ft_manager.get_job(selected_job_id)
+                
+                if selected_job:
+                    # Job details
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Job Information:**")
+                        st.write(f"- ID: {selected_job.id}")
+                        st.write(f"- Name: {selected_job.name}")
+                        st.write(f"- Provider: {selected_job.provider}")
+                        st.write(f"- Model: {selected_job.model}")
+                        st.write(f"- Status: {selected_job.status}")
+                        st.write(f"- Created: {selected_job.created_at}")
+                        
+                        if selected_job.fine_tuned_model:
+                            st.write(f"- Fine-tuned Model: {selected_job.fine_tuned_model}")
+                            
+                            # Add to model list for testing
+                            if st.button("🧪 Test Fine-tuned Model"):
+                                st.session_state.model_1 = selected_job.fine_tuned_model
+                                st.success(f"Set model to: {selected_job.fine_tuned_model}")
+                                st.info("Switch to the Chat Interface tab to test the model!")
+                    
+                    with col2:
+                        st.write("**Configuration:**")
+                        st.json(selected_job.config)
+                        
+                        if selected_job.metrics:
+                            st.write("**Metrics:**")
+                            st.json(selected_job.metrics)
+                    
+                    # Actions
+                    action_col1, action_col2, action_col3 = st.columns(3)
+                    
+                    with action_col1:
+                        if selected_job.status == FinetuningStatus.PENDING.value:
+                            if st.button("🚀 Run Job"):
+                                with st.spinner("Running fine-tuning job..."):
+                                    try:
+                                        result = asyncio.run(ft_manager.run_job(selected_job.id))
+                                        if result.status == FinetuningStatus.COMPLETED.value:
+                                            st.success("Job completed successfully!")
+                                            st.write(f"Fine-tuned model: {result.fine_tuned_model}")
+                                        else:
+                                            st.error(f"Job failed: {result.error_message}")
+                                    except Exception as e:
+                                        st.error(f"Error running job: {e}")
+                                    st.rerun()
+                    
+                    with action_col2:
+                        if selected_job.status == FinetuningStatus.RUNNING.value:
+                            if st.button("🛑 Cancel Job"):
+                                if ft_manager.cancel_job(selected_job.id):
+                                    st.success("Job cancelled")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to cancel job")
+                    
+                    with action_col3:
+                        if st.button("🗑️ Delete Job"):
+                            if ft_manager.delete_job(selected_job.id):
+                                st.success("Job deleted")
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete job")
+                    
+                    # Error details
+                    if selected_job.error_message:
+                        st.error(f"**Error:** {selected_job.error_message}")
+                    
+                    # Logs
+                    if selected_job.logs:
+                        with st.expander("📝 Logs"):
+                            for log in selected_job.logs:
+                                st.text(log)
+        else:
+            st.info("No fine-tuning jobs found.")
+    
+    with tab2:
+        st.subheader("Create New Fine-tuning Job")
+        
+        # Job creation form
+        with st.form("create_job_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                job_name = st.text_input("Job Name", help="Descriptive name for the job")
+                provider = st.selectbox("Provider", ["openai", "together"])
+                
+                # Get available models
+                available_models = ft_manager.get_available_models()
+                model_options = available_models.get(provider, [])
+                base_model = st.selectbox("Base Model", model_options)
+                
+                train_file = st.text_input("Training Data File", 
+                                         help="Path to training data file (JSONL format)")
+                val_file = st.text_input("Validation Data File (Optional)", 
+                                       help="Path to validation data file (JSONL format)")
+            
+            with col2:
+                n_epochs = st.number_input("Number of Epochs", min_value=1, max_value=10, value=1)
+                
+                if provider == "openai":
+                    batch_size = st.text_input("Batch Size", value="auto", 
+                                             help="Batch size or 'auto'")
+                    learning_rate = st.text_input("Learning Rate Multiplier", value="auto",
+                                                help="Learning rate multiplier or 'auto'")
+                else:  # together
+                    batch_size = st.number_input("Batch Size", min_value=1, max_value=32, value=8)
+                    learning_rate = st.number_input("Learning Rate", min_value=0.00001, max_value=0.001, 
+                                                  value=0.00001, format="%.5f")
+                    lora_r = st.number_input("LoRA R", min_value=1, max_value=256, value=64)
+                
+                wandb_project = st.text_input("W&B Project (Optional)", 
+                                            help="Weights & Biases project name")
+            
+            submitted = st.form_submit_button("Create Job")
+            
+            if submitted:
+                if not job_name or not train_file:
+                    st.error("Job name and training file are required")
+                else:
+                    try:
+                        if provider == "openai":
+                            # Convert string values for OpenAI
+                            batch_size_val = batch_size if batch_size == "auto" else int(batch_size)
+                            learning_rate_val = learning_rate if learning_rate == "auto" else float(learning_rate)
+                            
+                            job = ft_manager.create_openai_job(
+                                name=job_name,
+                                model=base_model,
+                                train_file=train_file,
+                                val_file=val_file if val_file else None,
+                                n_epochs=n_epochs,
+                                batch_size=batch_size_val,
+                                learning_rate_multiplier=learning_rate_val,
+                                wandb_project_name=wandb_project if wandb_project else None
+                            )
+                        else:  # together
+                            job = ft_manager.create_together_job(
+                                name=job_name,
+                                model=base_model,
+                                train_file=train_file,
+                                val_file=val_file if val_file else None,
+                                n_epochs=n_epochs,
+                                batch_size=int(batch_size),
+                                learning_rate=learning_rate,
+                                lora_r=lora_r,
+                                wandb_project_name=wandb_project if wandb_project else None
+                            )
+                        
+                        st.success(f"Job created successfully! ID: {job.id}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating job: {e}")
+    
+    with tab3:
+        st.subheader("Fine-tuning Statistics")
+        
+        stats = ft_manager.get_job_stats()
+        
+        # Overview metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Jobs", stats['total_jobs'])
+        with col2:
+            st.metric("Completed Jobs", stats['completed_jobs'])
+        with col3:
+            st.metric("Failed Jobs", stats['failed_jobs'])
+        with col4:
+            success_rate = (stats['completed_jobs'] / stats['total_jobs'] * 100) if stats['total_jobs'] > 0 else 0
+            st.metric("Success Rate", f"{success_rate:.1f}%")
+        
+        # Charts
+        if stats['total_jobs'] > 0:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Status distribution
+                status_data = stats['by_status']
+                if status_data:
+                    import plotly.express as px
+                    fig = px.pie(
+                        values=list(status_data.values()),
+                        names=list(status_data.keys()),
+                        title="Jobs by Status"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Provider distribution
+                provider_data = stats['by_provider']
+                if provider_data:
+                    fig = px.bar(
+                        x=list(provider_data.keys()),
+                        y=list(provider_data.values()),
+                        title="Jobs by Provider"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            # Model usage
+            st.subheader("Model Usage")
+            model_data = stats['by_model']
+            if model_data:
+                df = pd.DataFrame(list(model_data.items()), columns=['Model', 'Jobs'])
+                st.dataframe(df, use_container_width=True)
+    
+    with tab4:
+        st.subheader("Data Preparation")
+        
+        st.write("Convert conversation databases to fine-tuning format (JSONL)")
+        
+        # Database selection
+        available_dbs = get_available_databases()
+        selected_db_name = st.selectbox("Select Conversation Database", list(available_dbs.keys()))
+        selected_db_path = available_dbs[selected_db_name]
+        
+        # Configuration
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            output_filename = st.text_input("Output Filename", value="fine_tuning_data.jsonl")
+            max_conversations = st.number_input("Max Conversations (0 = all)", min_value=0, value=0)
+            
+        with col2:
+            system_prompt_override = st.text_area("System Prompt Override (optional)", 
+                                                height=100,
+                                                help="Override system prompt for all conversations")
+        
+        # Preview database info
+        if st.button("📊 Preview Database Info"):
+            try:
+                import sqlite3
+                with sqlite3.connect(selected_db_path) as conn:
+                    cursor = conn.cursor()
+                    
+                    # Get conversation count
+                    cursor.execute("SELECT COUNT(*) FROM conversations")
+                    conv_count = cursor.fetchone()[0]
+                    
+                    # Get sample system prompts
+                    cursor.execute("SELECT DISTINCT system_prompt_name FROM conversations WHERE system_prompt_name IS NOT NULL LIMIT 5")
+                    personas = [row[0] for row in cursor.fetchall()]
+                    
+                    # Get sample models
+                    cursor.execute("SELECT DISTINCT model FROM conversations WHERE model IS NOT NULL LIMIT 5")
+                    models = [row[0] for row in cursor.fetchall()]
+                    
+                    st.write(f"**Conversations:** {conv_count}")
+                    st.write(f"**Personas:** {', '.join(personas) if personas else 'None'}")
+                    st.write(f"**Models:** {', '.join(models) if models else 'None'}")
+                    
+            except Exception as e:
+                st.error(f"Error reading database: {e}")
+        
+        # Generate training data
+        if st.button("🚀 Generate Training Data"):
+            if not output_filename:
+                st.error("Please specify an output filename")
+            else:
+                with st.spinner("Generating training data..."):
+                    try:
+                        result = ft_manager.generate_finetuning_data_from_conversations(
+                            selected_db_path,
+                            output_filename,
+                            system_prompt_override if system_prompt_override else None,
+                            max_conversations if max_conversations > 0 else None
+                        )
+                        
+                        st.success(result)
+                        st.info(f"Training data saved to: {output_filename}")
+                        
+                        # Show preview of generated data
+                        if os.path.exists(output_filename):
+                            with open(output_filename, 'r') as f:
+                                lines = f.readlines()[:3]  # Show first 3 examples
+                                
+                            st.subheader("Preview of Generated Data")
+                            for i, line in enumerate(lines, 1):
+                                with st.expander(f"Example {i}"):
+                                    try:
+                                        example = json.loads(line)
+                                        st.json(example)
+                                    except json.JSONDecodeError:
+                                        st.error(f"Invalid JSON in line {i}")
+                                        
+                    except Exception as e:
+                        st.error(f"Error generating training data: {e}")
+        
+        # Help section
+        with st.expander("ℹ️ Help: Fine-tuning Data Format"):
+            st.write("""
+            **Fine-tuning Data Format:**
+            
+            The generated JSONL file contains training examples in the format:
+            ```json
+            {
+                "messages": [
+                    {"role": "system", "content": "System prompt..."},
+                    {"role": "user", "content": "User message..."},
+                    {"role": "assistant", "content": "Assistant response..."}
+                ]
+            }
+            ```
+            
+            **Tips:**
+            - Use conversations with good examples of your desired behavior
+            - Include diverse examples to improve model generalization
+            - System prompt override can standardize behavior across conversations
+            - Start with 50-100 examples for initial testing
+            """)
+        
+        # File management
+        st.subheader("📁 Training Data Files")
+        
+        # List existing JSONL files
+        jsonl_files = glob("*.jsonl")
+        if jsonl_files:
+            st.write("**Available Training Files:**")
+            for file in jsonl_files:
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.text(file)
+                with col2:
+                    # File size
+                    size = os.path.getsize(file) / 1024  # KB
+                    st.text(f"{size:.1f} KB")
+                with col3:
+                    if st.button("🗑️", key=f"delete_{file}"):
+                        os.remove(file)
+                        st.rerun()
+        else:
+            st.info("No training data files found in current directory")
+
+
+def get_available_models_with_finetuned():
+    """Get available models including fine-tuned models."""
+    models = list(ALL_MODELS)  # Start with base models
+    
+    try:
+        from fine_tuning_manager import FinetuningManager, FinetuningStatus
+        ft_manager = FinetuningManager()
+        
+        # Get completed fine-tuning jobs
+        completed_jobs = ft_manager.list_jobs(status=FinetuningStatus.COMPLETED.value)
+        
+        # Add fine-tuned models to the list
+        for job in completed_jobs:
+            if job.fine_tuned_model:
+                models.append(f"ft:{job.fine_tuned_model}")
+        
+    except ImportError:
+        pass  # Fine-tuning not available
+    
+    return models
 
 
 if __name__ == "__main__":

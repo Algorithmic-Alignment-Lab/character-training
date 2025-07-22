@@ -47,6 +47,22 @@ def clean_json_string(json_string: str) -> str:
 
 # --- Centralized API Call Function ---
 
+def process_model_name(model: str) -> str:
+    """
+    Process model name to handle fine-tuned models.
+    
+    Args:
+        model: The model name, potentially with 'ft:' prefix
+        
+    Returns:
+        The processed model name for API calls
+    """
+    # Handle fine-tuned models
+    if model.startswith("ft:"):
+        return model[3:]  # Remove 'ft:' prefix
+    
+    return model
+
 async def call_llm_api(
     messages: List[Dict[str, str]],
     model: str,
@@ -70,9 +86,12 @@ async def call_llm_api(
         Returns an error message string if the API call or parsing fails.
     """
     try:
+        # Process the model name to handle fine-tuned models
+        processed_model = process_model_name(model)
+        
         # Always get a raw text response first
         raw_response = await litellm.acompletion(
-            model=model,
+            model=processed_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -154,8 +173,11 @@ async def get_llm_response_stream(system_prompt: str, messages: List[Dict[str, s
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     try:
+        # Process the model name to handle fine-tuned models
+        processed_model = process_model_name(model)
+        
         response = await litellm.acompletion(
-            model=model,
+            model=processed_model,
             messages=full_messages,
             stream=True,
             temperature=0.7,
