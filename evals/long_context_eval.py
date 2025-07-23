@@ -389,7 +389,7 @@ async def main():
     # Config
     assistant_model = qwen3_32b
     user_model = sonnet_4
-    character = "interviewer"  # Use actual interviewer prompt for assistant
+    character = "interviewer_v2_jasmine"
 
     API = InferenceAPI(use_provider_if_model_not_found="openrouter")
 
