@@ -1,10 +1,14 @@
 import litellm
+import os
 import logging
 from typing import Optional, Type, TypeVar, List, Dict, Any
 from pydantic import BaseModel, Field, ValidationError
 import json
 import re
 import asyncio
+# load dotenv
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,7 +46,9 @@ def clean_json_string(json_string: str) -> str:
     # Remove markdown fences (```json ... ``` or ``` ... ```)
     match = re.search(r"```(json)?\s*(.*?)\s*```", json_string, re.DOTALL)
     if match:
+        # Extract the content between the fences
         return match.group(2).strip()
+    # If no fences, just strip whitespace
     return json_string.strip()
 
 # --- Centralized API Call Function ---
@@ -52,83 +58,141 @@ async def call_llm_api(
     model: str,
     response_model: Optional[Type[T]] = None,
     temperature: float = 0.7,
-    max_tokens: int = 1024,
-    max_retries: int = 5,
-) -> T | str:
+    max_tokens: int = 2048,
+    max_retries: int = 3,
+) -> T | Dict[str, Any] | str:
     """
-    Makes an asynchronous call to an LLM API using litellm, with a fallback to OpenRouter for Anthropic models.
+    Makes an asynchronous call to an LLM API using litellm.
+    If a Pydantic response_model is provided, it attempts to parse the response
+    into that model, handling common JSON formatting errors.
 
     Args:
         messages: A list of messages in the conversation.
-        model: The model to use for the completion (e.g., "claude-sonnet-4-20250514").
+        model: The model to use for the completion (e.g., "openrouter/qwen/qwen3-32b").
         response_model: The Pydantic model to parse the response into.
         temperature: The temperature for sampling.
         max_tokens: The maximum number of tokens to generate.
-        max_retries: The number of retries for the initial API call.
+        max_retries: The number of retries for the API call.
 
     Returns:
-        If a response_model is provided, returns an instance of that model.
+        If a response_model is provided, returns an instance of that model on success,
+        or a dictionary with an "error" key on failure.
         Otherwise, returns the raw text response as a string.
-        Returns an error message string if all API calls fail.
     """
-    
-    fallback_model = None
-    if model == "claude-sonnet-4-20250514":
-        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+    # Parse model to handle different providers correctly
+    original_model = model
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            # Handle different model formats for litellm by setting environment variables
+            if model.startswith("openrouter/"):
+                # For OpenRouter, set environment variables and use full model path
+                openrouter_key = os.getenv("OPENROUTER_API_KEY")
+                if openrouter_key:
+                    os.environ["OPENROUTER_API_KEY"] = openrouter_key
+                    os.environ["OPENROUTER_API_BASE"] = "https://openrouter.ai/api/v1"
+                model_to_use = model  # Keep full openrouter/ prefix
+            elif model.startswith("anthropic/"):
+                # For Anthropic direct, set API key and use model without prefix
+                anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+                if anthropic_key:
+                    os.environ["ANTHROPIC_API_KEY"] = anthropic_key
+                model_to_use = model.replace("anthropic/", "")
+            elif model.startswith("openai/"):
+                # For OpenAI, set API key and use model without prefix
+                openai_key = os.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    os.environ["OPENAI_API_KEY"] = openai_key
+                model_to_use = model.replace("openai/", "")
+            elif model.startswith("together/"):
+                # For Together, set API key and use model without prefix
+                together_key = os.getenv("TOGETHER_API_KEY")
+                if together_key:
+                    os.environ["TOGETHER_API_KEY"] = together_key
+                model_to_use = model.replace("together/", "")
+            else:
+                # Default case - assume it's a direct model name
+                model_to_use = model
+            
+            # Prepare arguments for litellm call
+            call_kwargs: Dict[str, Any] = {
+                "model": model_to_use,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "timeout": 60.0,
+            }
+            
+            if response_model:
+                call_kwargs["response_model"] = response_model
+                
+            logger.info(f"Attempt {attempt + 1}/{max_retries} to call model: {model_to_use}")
+            raw_response = await litellm.acompletion(**call_kwargs)
+            
+            response_content = raw_response.choices[0].message.content
+            
+            if response_model:
+                if isinstance(response_content, str):
+                    cleaned_content = clean_json_string(response_content)
+                    try:
+                        parsed_response = response_model.model_validate_json(cleaned_content)
+                        return parsed_response
+                    except ValidationError as ve:
+                        logger.warning(f"Pydantic validation failed after cleaning. Error: {ve}. Raw content: {cleaned_content}")
+                        raise ve
+                else:
+                    return response_model.model_validate(response_content)
+            else:
+                return response_content or ""
 
-    try:
-        # First attempt to call the model directly
-        logger.info(f"Attempting to call model: {model}")
-        raw_response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=45.0,
-            max_retries=max_retries
-        )
-        response_text = raw_response.choices[0].message.content or ""
-        logger.info(f"Successfully received response from {model}")
+        except Exception as e:
+            logger.error(f"API call for model {model} failed on attempt {attempt + 1}. Error: {e}")
+            
+            # Check if this is an Anthropic overload error that should trigger immediate fallback
+            is_anthropic_overload = (
+                model.startswith("anthropic/") and 
+                ("overloaded_error" in str(e).lower() or "overloaded" in str(e).lower())
+            )
+            
+            if is_anthropic_overload:
+                # Immediate fallback for overload errors
+                import re as _re
+                model_without_prefix = model.replace("anthropic/", "")
+                m = _re.match(r"^(.+?)(?:-\d{8})?$", model_without_prefix)
+                base = m.group(1) if m else model_without_prefix
+                fallback_model = f"openrouter/anthropic/{base}"
+                logger.info(f"Anthropic model {model} overloaded. Immediately falling back to {fallback_model}.")
+                model = fallback_model
+                attempt = 0
+                continue
+            
+            attempt += 1
+            if attempt >= max_retries:
+                # If this was an Anthropic model, try OpenRouter fallback without date suffix
+                if model.startswith("anthropic/"):
+                    # Extract base model name (drop trailing date if present)
+                    import re as _re
+                    model_without_prefix = model.replace("anthropic/", "")
+                    m = _re.match(r"^(.+?)(?:-\d{8})?$", model_without_prefix)
+                    base = m.group(1) if m else model_without_prefix
+                    fallback_model = f"openrouter/anthropic/{base}"
+                    logger.info(f"Anthropic model {model} exhausted retries. Falling back to {fallback_model}.")
+                    # Reset model for retry
+                    model = fallback_model
+                    attempt = 0
+                    continue
+                # No more fallbacks; return error
+                error_message = f"Failed to get a valid response from model {model} after {max_retries} attempts. Last error: {e}"
+                logger.critical(error_message)
+                if response_model:
+                    return {"error": error_message, "raw_response": str(e)}
+                return error_message
+            await asyncio.sleep(2 ** attempt)
 
-    except Exception as e:
-        logger.warning(f"Initial API call for model {model} failed: {e}. Attempting fallback.")
-        
-        if fallback_model:
-            logger.info(f"Falling back to OpenRouter model: {fallback_model}")
-            try:
-                raw_response = await litellm.acompletion(
-                    model=fallback_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=45.0,
-                    max_retries=max_retries
-                )
-                response_text = raw_response.choices[0].message.content or ""
-                logger.info(f"Successfully received response from fallback model {fallback_model}")
-            except Exception as e_fallback:
-                error_message = f"Fallback API call for model {fallback_model} also failed: {e_fallback}"
-                logger.error(error_message)
-                return f"[ERROR: {error_message}]"
-        else:
-            # Generic error if the failed model is not the one with a specific fallback
-            error_message = f"API call for model {model} failed and no specific fallback is configured. Error: {e}"
-            logger.error(error_message)
-            return f"[ERROR: {error_message}]"
-
-    if not response_model:
-        return response_text
-
-    # If a model is expected, clean and parse the text
-    cleaned_text = clean_json_string(response_text)
-    
-    try:
-        return response_model.parse_raw(cleaned_text)
-    except (ValidationError, json.JSONDecodeError) as e_parse:
-        error_message = f"Failed to parse {response_model.__name__} from response. Error: {e_parse}. Raw text: '{cleaned_text}'"
-        logger.error(error_message)
-        # Fallback: return the raw (but cleaned) text for the caller to handle
-        return cleaned_text
+    final_error = f"Exhausted all retries for model {model}."
+    if response_model:
+        return {"error": final_error}
+    return final_error
 
 def get_llm_response(system_prompt: str, messages: List[Dict[str, str]], model: str) -> str:
     """

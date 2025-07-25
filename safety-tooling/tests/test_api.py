@@ -1,6 +1,10 @@
 """Basic tests for the api."""
 
+import os
+import sys
 import pydantic
+# Ensure safetytooling package is on path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import pytest
 
 from safetytooling.apis.inference.api import InferenceAPI

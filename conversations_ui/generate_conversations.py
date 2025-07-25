@@ -97,8 +97,8 @@ Respond with only the 5-word name, nothing else."""
     # Validate it's roughly 5 words
     words = name.split('_')
     if len(words) != 5:
-        # Fallback to timestamp-based name
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Fallback to timestamp-based name (continuous timestamp for single segment)
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         return f"evaluation_run_{timestamp}"
     
     return name

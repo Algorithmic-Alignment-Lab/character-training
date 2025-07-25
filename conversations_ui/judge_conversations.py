@@ -372,8 +372,13 @@ class EvaluationRunner:
                 pass
             
             # Fallback to regular conversations table
-            cursor.execute("SELECT id FROM conversations ORDER BY created_at DESC")
-            return [dict(row) for row in cursor.fetchall()]
+            try:
+                cursor.execute("SELECT id FROM conversations ORDER BY created_at DESC")
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            except sqlite3.OperationalError:
+                # Neither table exists or is accessible; return empty list
+                return []
 
     def _calculate_single_summary(self, judgments: List[SingleJudgment], filepath: str, traits: List[str]) -> EvaluationSummary:
         """Calculate summary statistics for single evaluation mode."""
