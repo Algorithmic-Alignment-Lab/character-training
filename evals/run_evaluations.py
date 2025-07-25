@@ -121,6 +121,13 @@ async def run_evaluation_on_conversation_worker(
     conversation_id = conversation_data.get("conversation_id", "unknown")
     start_time = time.time()
     
+    # Compatibility mapping from 'role' to 'speaker'
+    for message in conversation_data.get("conversation_log", []):
+        if "role" in message and "speaker" not in message:
+            message["speaker"] = message["role"]
+        if "content" in message and "message" not in message:
+            message["message"] = message["content"]
+
     async with semaphore:  # Limit concurrent workers
         async def _run_all_evaluations():
             logger.info(f"Worker {worker_id} starting evaluation for conversation {conversation_id}")
@@ -195,7 +202,7 @@ async def main():
     """Main function to run evaluations on a set of conversations with parallel workers."""
     parser = argparse.ArgumentParser(description="Run evaluations on synthetic conversations.")
     parser.add_argument("--input-file", type=str, required=True, help="Path to the .jsonl file containing conversations.")
-    parser.add_argument("--judge-model", type=str, default="openrouter/anthropic/claude-3.5-sonnet", help="Model to use for judging the conversations.")
+    parser.add_argument("--judge-model", type=str, default="anthropic/claude-sonnet-4-20250514", help="Model to use for judging the conversations.")
     parser.add_argument("--max-workers", type=int, default=MAX_CONCURRENT_WORKERS, help="Maximum number of concurrent evaluation workers.")
     
     args = parser.parse_args()

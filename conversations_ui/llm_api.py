@@ -10,6 +10,51 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
+# --- Retry Utility ---
+import random
+import time
+async def retry_with_backoff(
+    func,
+    max_retries: int,
+    backoff_base: float = 1.0,
+    backoff_max: float = 30.0,
+    *args,
+    **kwargs
+) -> Any:
+    """
+    Retry an async function with exponential backoff and jitter.
+    Args:
+        func: Async function to retry
+        max_retries: Number of retry attempts
+        backoff_base: Base backoff in seconds
+        backoff_max: Max backoff in seconds
+        *args, **kwargs: Arguments for func
+    Returns:
+        Result of func
+    Raises:
+        Last exception if all retries fail
+    """
+    last_exception = None
+    for attempt in range(max_retries + 1):
+        try:
+            if attempt > 0:
+                backoff = min(backoff_base * (2 ** (attempt - 1)), backoff_max)
+                jitter = random.uniform(0, backoff * 0.1)
+                wait = backoff + jitter
+                logger.info(f"Retrying in {wait:.2f}s (attempt {attempt+1}/{max_retries+1})")
+                await asyncio.sleep(wait)
+            result = await func(*args, **kwargs)
+            if attempt > 0:
+                logger.info(f"Function succeeded on retry attempt {attempt+1}")
+            return result
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Attempt {attempt+1}/{max_retries+1} failed: {e}")
+            if attempt == max_retries:
+                break
+    logger.error(f"All {max_retries+1} attempts failed. Last error: {last_exception}")
+    raise last_exception
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -56,26 +101,26 @@ def clean_json_string(json_string: str) -> str:
 async def call_llm_api(
     messages: List[Dict[str, str]],
     model: str,
-    response_model: Optional[Type[T]] = None,
+    response_format: Optional[Type[T]] = None,
     temperature: float = 0.7,
     max_tokens: int = 2048,
     max_retries: int = 3,
 ) -> T | Dict[str, Any] | str:
     """
     Makes an asynchronous call to an LLM API using litellm.
-    If a Pydantic response_model is provided, it attempts to parse the response
+    If a Pydantic response_format is provided, it attempts to parse the response
     into that model, handling common JSON formatting errors.
 
     Args:
         messages: A list of messages in the conversation.
         model: The model to use for the completion (e.g., "openrouter/qwen/qwen3-32b").
-        response_model: The Pydantic model to parse the response into.
+        response_format: The Pydantic model to parse the response into.
         temperature: The temperature for sampling.
         max_tokens: The maximum number of tokens to generate.
         max_retries: The number of retries for the API call.
 
     Returns:
-        If a response_model is provided, returns an instance of that model on success,
+        If a response_format is provided, returns an instance of that model on success,
         or a dictionary with an "error" key on failure.
         Otherwise, returns the raw text response as a string.
     """
@@ -123,25 +168,28 @@ async def call_llm_api(
                 "timeout": 60.0,
             }
             
-            if response_model:
-                call_kwargs["response_model"] = response_model
+            if response_format:
+                call_kwargs["response_format"] = {"type": "json_object", "schema": response_format.model_json_schema()}
                 
             logger.info(f"Attempt {attempt + 1}/{max_retries} to call model: {model_to_use}")
             raw_response = await litellm.acompletion(**call_kwargs)
             
             response_content = raw_response.choices[0].message.content
             
-            if response_model:
+            if response_format:
                 if isinstance(response_content, str):
                     cleaned_content = clean_json_string(response_content)
                     try:
-                        parsed_response = response_model.model_validate_json(cleaned_content)
+                        # Manually parse the JSON string and validate
+                        parsed_json = json.loads(cleaned_content)
+                        parsed_response = response_format.model_validate(parsed_json)
                         return parsed_response
-                    except ValidationError as ve:
+                    except (ValidationError, json.JSONDecodeError) as ve:
                         logger.warning(f"Pydantic validation failed after cleaning. Error: {ve}. Raw content: {cleaned_content}")
                         raise ve
                 else:
-                    return response_model.model_validate(response_content)
+                    # If litellm returns a dict-like object, validate it
+                    return response_format.model_validate(response_content)
             else:
                 return response_content or ""
 
@@ -182,15 +230,15 @@ async def call_llm_api(
                     attempt = 0
                     continue
                 # No more fallbacks; return error
-                error_message = f"Failed to get a valid response from model {model} after {max_retries} attempts. Last error: {e}"
+                error_message = f"Failed to get a valid response from model {original_model} after {max_retries} attempts. Last error: {e}"
                 logger.critical(error_message)
-                if response_model:
+                if response_format:
                     return {"error": error_message, "raw_response": str(e)}
                 return error_message
             await asyncio.sleep(2 ** attempt)
 
-    final_error = f"Exhausted all retries for model {model}."
-    if response_model:
+    final_error = f"Exhausted all retries for model {original_model}."
+    if response_format:
         return {"error": final_error}
     return final_error
 
@@ -220,7 +268,7 @@ def get_llm_response(system_prompt: str, messages: List[Dict[str, str]], model: 
     response = loop.run_until_complete(call_llm_api(
         messages=full_messages,
         model=model,
-        response_model=None  # We just want the string response
+        response_format=None  # We just want the string response
     ))
 
     if isinstance(response, str):

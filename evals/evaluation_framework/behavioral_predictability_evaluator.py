@@ -51,7 +51,9 @@ class BehavioralPredictabilityEvaluator(BaseEvaluator):
         messages = [{"role": "user", "content": prompt}]
         
         try:
-            response = await call_llm_api(messages, self.judge_model, response_model=BehavioralPredictabilityResult)
+            response = await call_llm_api(messages, self.judge_model, response_format=BehavioralPredictabilityResult)
+            if isinstance(response, dict) and "error" in response:
+                return response
             return response.model_dump()
         except Exception as e:
             return {"error": f"Failed to get valid JSON response: {e}"}

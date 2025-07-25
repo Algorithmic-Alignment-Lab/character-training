@@ -10,8 +10,8 @@ python3 evals/synthetic_generation/conversation_generator.py \
   --assistant-model anthropic/claude-sonnet-4-20250514 \
   --user-persona hates_customers_candidate \
   --user-model openrouter/qwen/qwen3-32b \
-  --num-conversations 5 \
-  --num-turns 3
+  --num-conversations 3 \
+  --num-turns 4
 ```
 
 ## How to Run Evaluations

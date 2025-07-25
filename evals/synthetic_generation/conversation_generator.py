@@ -13,9 +13,10 @@ import random
 
 # Add project root to path to allow imports from other directories
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, project_root)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from conversations_ui.llm_api import call_llm_api
+from evals.llm_api import call_llm_api, retry_with_backoff
 from evals.synthetic_generation.context_generator import generate_diverse_contexts
 from evals.models import (
     ConversationMessage, GeneratedConversation, ConversationGenerationMetadata,
@@ -34,63 +35,6 @@ RETRY_BACKOFF_BASE = 1.0  # Base backoff time in seconds
 RETRY_BACKOFF_MAX = 30.0  # Maximum backoff time in seconds
 MAX_CONCURRENT_WORKERS = 10  # Maximum number of concurrent workers
 
-# --- Helper Functions ---
-
-async def retry_with_backoff(
-    func,
-    max_retries: int,
-    backoff_base: float = RETRY_BACKOFF_BASE,
-    backoff_max: float = RETRY_BACKOFF_MAX,
-    *args,
-    **kwargs
-):
-    """
-    Retry a function with exponential backoff and jitter.
-    
-    Args:
-        func: The async function to retry
-        max_retries: Maximum number of retry attempts
-        backoff_base: Base backoff time in seconds
-        backoff_max: Maximum backoff time in seconds
-        *args, **kwargs: Arguments to pass to the function
-    
-    Returns:
-        The result of the function call
-    
-    Raises:
-        The last exception encountered after all retries are exhausted
-    """
-    last_exception = None
-    
-    for attempt in range(max_retries + 1):  # +1 to include initial attempt
-        try:
-            if attempt > 0:
-                # Calculate backoff with exponential growth and jitter
-                backoff_time = min(backoff_base * (2 ** (attempt - 1)), backoff_max)
-                jitter = random.uniform(0, backoff_time * 0.1)  # Add 10% jitter
-                total_wait = backoff_time + jitter
-                
-                logger.info(f"Retrying in {total_wait:.2f} seconds (attempt {attempt + 1}/{max_retries + 1})")
-                await asyncio.sleep(total_wait)
-            
-            result = await func(*args, **kwargs)
-            
-            if attempt > 0:
-                logger.info(f"Function succeeded on retry attempt {attempt + 1}")
-            
-            return result
-            
-        except Exception as e:
-            last_exception = e
-            logger.warning(f"Attempt {attempt + 1}/{max_retries + 1} failed: {str(e)}")
-            
-            # Don't sleep after the last attempt
-            if attempt == max_retries:
-                break
-    
-    # All retries exhausted
-    logger.error(f"All {max_retries + 1} attempts failed. Last error: {str(last_exception)}")
-    raise last_exception
 
 def load_character_definitions() -> Dict[str, Any]:
     """Loads character profiles from both the consolidated JSON and the original system_prompts.json, merging them."""
@@ -276,48 +220,32 @@ async def generate_single_conversation(
     num_turns: int
 ) -> List[Dict[str, str]]:
     """Generates a single multi-turn conversation with comprehensive error handling and retries."""
+    # start with initial user message
     messages = [{"role": "user", "content": initial_context}]
-    
-    # Handle assistant model fallback if needed
-    current_assistant_model = assistant_model
-    if assistant_model.startswith("claude-") or assistant_model.startswith("anthropic/"):
-        # Normalize to anthropic/ prefix for fallback logic
-        if not assistant_model.startswith("anthropic/"):
-            current_assistant_model = f"anthropic/{assistant_model}"
-    
+    # alternate single-role turns for num_turns messages
     for turn in range(num_turns):
-        # Assistant's turn with retry
-        assistant_response = await generate_single_turn_with_retry(
+        # decide next role based on last message
+        last_role = messages[-1]["role"]
+        if last_role == "user":
+            role = "assistant"
+            persona = assistant_persona
+            model = assistant_model
+        else:
+            role = "user"
+            persona = user_persona
+            model = user_model
+        # generate one turn
+        response = await generate_single_turn_with_retry(
             messages=messages,
-            persona=assistant_persona,
-            model=current_assistant_model,
-            role="assistant",
+            persona=persona,
+            model=model,
+            role=role,
             turn_number=turn
         )
-        
-        if assistant_response is None:
-            logger.error(f"Assistant turn {turn} failed permanently, ending conversation")
+        if response is None:
+            logger.error(f"{role.capitalize()} turn {turn} failed permanently, ending conversation")
             break
-        
-        messages.append({"role": "assistant", "content": assistant_response})
-
-        # Only continue to user turn if we got a valid assistant response and not on last turn
-        if turn < num_turns - 1:
-            # User's turn with retry
-            user_response = await generate_single_turn_with_retry(
-                messages=messages,
-                persona=user_persona,
-                model=user_model,
-                role="user",
-                turn_number=turn
-            )
-            
-            if user_response is None:
-                logger.error(f"User turn {turn} failed permanently, ending conversation")
-                break
-                
-            messages.append({"role": "user", "content": user_response})
-        
+        messages.append({"role": role, "content": response})
     return messages
 
 # --- Main Logic ---
@@ -331,7 +259,7 @@ async def main():
     parser.add_argument("--user-persona", type=str, default="hates_customers_candidate", help="ID of the user persona from character_definitions.json.")
     parser.add_argument("--assistant-persona", type=str, required=True, help="ID of the assistant persona from character_definitions.json.")
     parser.add_argument("--assistant-model", type=str, default="openrouter", required=True, help="Model name for the assistant (e.g., 'openrouter/google/gemma-7b-it').")
-    parser.add_argument("--user-model", type=str, default="openrouter/anthropic/claude-3.5-sonnet", help="Model name for the user persona.")
+    parser.add_argument("--user-model", type=str, default="anthropic/claude-sonnet-4-20250514", help="Model name for the user persona.")
     parser.add_argument("--topic", type=str, default="A difficult customer service interaction at a coffee shop.", help="Topic for generating diverse conversation starters.")
     parser.add_argument("--output-file", type=str, help="Specific name for the output JSONL file.")
     parser.add_argument("--input-file", type=str, help="Path to an existing conversation file to append new conversations to.")
@@ -382,10 +310,6 @@ async def main():
         metadata = vars(args)
         print(f"Generating {args.num_conversations} new conversations and saving to '{output_file_path}'...")
 
-    # Normalize model names to ensure proper fallback handling
-    if args.assistant_model.startswith("claude") and not args.assistant_model.startswith("anthropic/"):
-        args.assistant_model = f"anthropic/{args.assistant_model}"
-    
     # Generate contexts with retry
     print("Generating diverse starting contexts...")
     try:

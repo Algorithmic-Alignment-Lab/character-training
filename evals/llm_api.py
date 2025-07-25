@@ -6,6 +6,10 @@ import json
 import re
 import asyncio
 
+# load dotenv variables if available
+from dotenv import load_dotenv
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -73,7 +77,7 @@ async def call_llm_api(
     """
     
     fallback_model = None
-    if model == "claude-sonnet-4-20250514":
+    if model == "anthropic/claude-sonnet-4-20250514":
         fallback_model = "openrouter/anthropic/claude-sonnet-4"
 
     try:

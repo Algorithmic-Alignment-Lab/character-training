@@ -77,7 +77,9 @@ class TraitAdherenceEvaluator(BaseEvaluator):
         messages = [{"role": "user", "content": judge_prompt}]
         
         try:
-            response = await call_llm_api(messages, self.judge_model, response_model=TraitAdherenceResult)
+            response = await call_llm_api(messages, self.judge_model, response_format=TraitAdherenceResult)
+            if isinstance(response, dict) and "error" in response:
+                return response
             return response.model_dump()
         except Exception as e:
             return {"error": f"Failed to get valid JSON response: {e}"}

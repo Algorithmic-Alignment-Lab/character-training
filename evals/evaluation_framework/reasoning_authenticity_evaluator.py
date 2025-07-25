@@ -15,7 +15,7 @@ class ReasoningAuthenticityResult(BaseModel):
 
 class ReasoningAuthenticityEvaluator(BaseEvaluator):
     """
-    Evaluates the authenticity of the character's reasoning.
+    Evaluates whether the character's reasoning is authentic and believable.
     """
     async def evaluate(self, conversation_log: List[Dict[str, Any]], character_profile: Dict[str, Any]) -> Dict[str, Any]:
         character_name = character_profile.get("name", "Character")
@@ -53,7 +53,9 @@ class ReasoningAuthenticityEvaluator(BaseEvaluator):
         messages = [{"role": "user", "content": prompt}]
         
         try:
-            response = await call_llm_api(messages, self.judge_model, response_model=ReasoningAuthenticityResult)
+            response = await call_llm_api(messages, self.judge_model, response_format=ReasoningAuthenticityResult)
+            if isinstance(response, dict) and "error" in response:
+                return response
             return response.model_dump()
         except Exception as e:
             return {"error": f"Failed to get valid JSON response: {e}"}

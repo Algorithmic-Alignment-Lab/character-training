@@ -1,12 +1,21 @@
+import sys
+import os
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+import json
+import fire
+from datetime import datetime
+
 import asyncio
 from typing import List, Dict, Any
 
-from conversations_ui.llm_api import call_llm_api
+from evals.llm_api import call_llm_api
 
 async def generate_diverse_contexts(
     topic: str,
     num_contexts: int,
-    user_model: str = "openrouter/anthropic/claude-3.5-sonnet",
+    context_model: str = "anthropic/claude-sonnet-4-20250514",
 ) -> List[str]:
     """
     Generates a list of diverse conversation starting contexts based on a topic.
@@ -17,7 +26,7 @@ async def generate_diverse_contexts(
     Args:
         topic: The central topic for the conversation starters.
         num_contexts: The number of diverse contexts to generate.
-        user_model: The LLM to use for generating the contexts.
+        context_model: The LLM to use for generating the contexts.
 
     Returns:
         A list of unique and diverse conversation starting prompts.
@@ -49,30 +58,71 @@ async def generate_diverse_contexts(
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
         ]
-        
-        new_context = await call_llm_api(messages=messages, model=user_model)
-        
-        if isinstance(new_context, str) and not new_context.startswith("[ERROR:") and new_context.strip():
-            raw_ctx = new_context.strip()
-            # Refinement step using Sonnet 4
-            refine_prompt = (
-                f"Refine the following conversation starting prompt to be more vivid, concise, and clear. "
-                f"Purpose: generate a user-initiated message for a conversation about \"{topic}\". "
-                f"Original prompt: \"{raw_ctx}\". Respond with only the refined prompt."
-            )
-            refine_messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": refine_prompt}
-            ]
-            refined = await call_llm_api(messages=refine_messages, model="anthropic/claude-sonnet-4-20250514")
-            if isinstance(refined, str) and refined.strip():
-                final_ctx = refined.strip()
-                print(f"Refined context {i+1}/{num_contexts}: {final_ctx[:80]}...")
-            else:
-                final_ctx = raw_ctx
-                print(f"Using original context for item {i+1} due to refinement failure.")
-            contexts.append(final_ctx)
+        # Generate initial context via LLM
+        try:
+            raw_ctx = await call_llm_api(messages=messages, model=context_model)
+        except Exception as e:
+            print(f"Warning: Could not generate a valid context for item {i+1}: {e}")
+            continue
+        if not isinstance(raw_ctx, str) or not raw_ctx.strip():
+            print(f"Warning: Received empty or invalid context for item {i+1}.")
+            continue
+        raw_ctx = raw_ctx.strip()
+        # Refinement step using Sonnet 4
+        refine_prompt = (
+            f"Refine the following conversation starting prompt to be more vivid, concise, and clear. "
+            f"Purpose: generate a user-initiated message for a conversation about \"{topic}\". "
+            f"Original prompt: \"{raw_ctx}\". Respond with only the refined prompt."
+        )
+        refine_messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": refine_prompt}
+        ]
+        refined = await call_llm_api(messages=refine_messages, model=context_model)
+        if isinstance(refined, str) and refined.strip():
+            final_ctx = refined.strip()
+            print(f"Refined context {i+1}/{num_contexts}: {final_ctx[:80]}...")
         else:
-            print(f"Warning: Could not generate a valid context for item {i+1}.")
+            final_ctx = raw_ctx
+            print(f"Using original context for item {i+1} due to refinement failure.")
+        contexts.append(final_ctx)
 
     return contexts
+
+
+async def main(theme: str, num_contexts: int = 5, model: str = "anthropic/claude-sonnet-4-20250514"):
+    """
+    Generates and saves diverse conversation contexts.
+
+    Args:
+        theme: The central theme for the contexts.
+        num_contexts: The number of contexts to generate.
+        model: The LLM to use for generation.
+    """
+    print(f"Generating {num_contexts} contexts for theme: '{theme}' using {model}...")
+    contexts = await generate_diverse_contexts(
+        topic=theme,
+        num_contexts=num_contexts,
+        context_model=model,
+    )
+
+    if not contexts:
+        print("No contexts were generated. Exiting.")
+        return
+
+    # Create the output directory if it doesn't exist
+    output_dir = os.path.join(project_root, "evals/synthetic_evaluation_data/contexts")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save contexts to a file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(output_dir, f"{theme.replace(' ', '_')}_{timestamp}.json")
+    
+    with open(file_path, "w") as f:
+        json.dump(contexts, f, indent=2)
+
+    print(f"Successfully saved {len(contexts)} contexts to {file_path}")
+
+
+if __name__ == "__main__":
+    fire.Fire(main)
