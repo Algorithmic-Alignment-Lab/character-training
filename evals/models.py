@@ -7,10 +7,20 @@ from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class APICallLog(BaseModel):
+    """Logs a single API call to an LLM."""
+    model: str
+    messages: List[Dict[str, str]]
+    raw_response: Union[Dict[str, Any], str]
+    thinking_content: Optional[str] = None
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
 class ConversationMessage(BaseModel):
     """A single message in a conversation."""
     role: str = Field(..., pattern="^(user|assistant|system)$")
     content: str = Field(..., min_length=1)
+    api_call_log: Optional[APICallLog] = None
 
 
 class GeneratedConversation(BaseModel):
@@ -161,3 +171,11 @@ class ProgressStats(BaseModel):
         if self.successful_tasks + self.failed_tasks != self.completed_tasks:
             raise ValueError("Successful + failed tasks must equal completed tasks")
         return self
+
+
+class LLMCallResult(BaseModel):
+    """The result of a single LLM API call, including the log."""
+    response_text: str
+    structured_response: Optional[Any] = None
+    api_log: APICallLog
+    error: Optional[str] = None

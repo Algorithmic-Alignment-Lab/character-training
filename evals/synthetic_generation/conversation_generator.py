@@ -16,7 +16,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from evals.llm_api import call_llm_api, retry_with_backoff
+from evals.llm_api import call_llm_api
 from evals.synthetic_generation.context_generator import generate_diverse_contexts
 from evals.models import (
     ConversationMessage, GeneratedConversation, ConversationGenerationMetadata,
@@ -76,7 +76,8 @@ async def generate_single_conversation_worker(
     user_model: str,
     assistant_model: str,
     initial_context: str,
-    num_turns: int
+    num_turns: int,
+    thinking: bool = False
 ) -> WorkerResult:
     """Worker function for generating a single conversation with comprehensive retry logic."""
     start_time = time.time()
@@ -91,7 +92,8 @@ async def generate_single_conversation_worker(
                 user_model=user_model,
                 assistant_model=assistant_model,
                 initial_context=initial_context,
-                num_turns=num_turns
+                num_turns=num_turns,
+                thinking=thinking
             )
             
             # Validate conversation using Pydantic
@@ -109,7 +111,11 @@ async def generate_single_conversation_worker(
             validated_messages = []
             for i, msg in enumerate(conversation_log):
                 try:
-                    validated_msg = ConversationMessage(role=msg["role"], content=msg["content"])
+                    validated_msg = ConversationMessage(
+                        role=msg["role"], 
+                        content=msg["content"],
+                        api_call_log=msg.get("api_log")
+                    )
                     validated_messages.append(validated_msg)
                 except Exception as e:
                     raise ValueError(f"Message {i} failed validation: {str(e)}")
@@ -123,10 +129,7 @@ async def generate_single_conversation_worker(
         
         try:
             # Retry conversation generation at the worker level
-            conversation = await retry_with_backoff(
-                _generate_conversation, 
-                MAX_CONVERSATION_RETRIES
-            )
+            conversation = await _generate_conversation()
             
             duration = time.time() - start_time
             logger.info(f"Worker {worker_id} completed task {task_id} successfully in {duration:.2f}s")
@@ -157,8 +160,9 @@ async def generate_single_turn_with_retry(
     persona: Dict[str, Any], 
     model: str, 
     role: str,
-    turn_number: int
-) -> Optional[str]:
+    turn_number: int,
+    thinking: bool = False
+) -> Optional[Dict[str, Any]]:
     """
     Generate a single turn with retry logic.
     
@@ -168,9 +172,10 @@ async def generate_single_turn_with_retry(
         model: Model to use for generation
         role: Role for logging ("assistant" or "user")
         turn_number: Current turn number for logging
+        thinking: Whether to enable thinking for supported models
     
     Returns:
-        Generated response string or None if all retries failed
+        Dict with 'content' and 'api_log' keys or None if all retries failed
     """
     async def _make_api_call():
         if role == "assistant":
@@ -191,22 +196,28 @@ async def generate_single_turn_with_retry(
             prompt = [{"role": "user", "content": user_prompt_content}]
         
         start_time = time.time()
-        response = await call_llm_api(messages=prompt, model=model)
+        result = await call_llm_api(messages=prompt, model=model, thinking=thinking)
         duration = time.time() - start_time
         
         # Validate API response
-        if isinstance(response, dict) and "error" in response:
-            raise ValueError(f"{role.capitalize()} API error (turn {turn_number}): {response['error']}")
-        elif isinstance(response, str) and response.startswith("Failed to get a valid response"):
-            raise ValueError(f"{role.capitalize()} model failed (turn {turn_number}): {response}")
-        elif not response or len(response.strip()) == 0:
+        if result.error:
+            raise ValueError(f"{role.capitalize()} API error (turn {turn_number}): {result.error}")
+        elif result.response_text.startswith("[ERROR:"):
+            raise ValueError(f"{role.capitalize()} model failed (turn {turn_number}): {result.response_text}")
+        elif not result.response_text or len(result.response_text.strip()) == 0:
             raise ValueError(f"{role.capitalize()} returned empty response (turn {turn_number})")
         
         logger.info(f"{role.capitalize()} turn {turn_number} completed in {duration:.2f}s")
-        return response
+        return {
+            'content': result.response_text,
+            'api_log': result.api_log
+        }
     
     try:
-        return await retry_with_backoff(_make_api_call, MAX_TURN_RETRIES)
+        return await _make_api_call()
+    except Exception as e:
+        logger.error(f"Failed to generate {role} turn {turn_number} after {MAX_TURN_RETRIES + 1} attempts: {str(e)}")
+        return None
     except Exception as e:
         logger.error(f"Failed to generate {role} turn {turn_number} after {MAX_TURN_RETRIES + 1} attempts: {str(e)}")
         return None
@@ -217,11 +228,13 @@ async def generate_single_conversation(
     user_model: str,
     assistant_model: str,
     initial_context: str,
-    num_turns: int
-) -> List[Dict[str, str]]:
-    """Generates a single multi-turn conversation with comprehensive error handling and retries."""
-    # start with initial user message
-    messages = [{"role": "user", "content": initial_context}]
+    num_turns: int,
+    thinking: bool = False
+) -> List[Dict[str, Any]]:
+    """Generates a single multi-turn conversation with comprehensive error handling and logging."""
+    # start with initial user message (no API call needed for this)
+    messages = [{"role": "user", "content": initial_context, "api_log": None}]
+    
     # alternate single-role turns for num_turns messages
     for turn in range(num_turns):
         # decide next role based on last message
@@ -234,18 +247,27 @@ async def generate_single_conversation(
             role = "user"
             persona = user_persona
             model = user_model
+        
         # generate one turn
-        response = await generate_single_turn_with_retry(
-            messages=messages,
+        turn_result = await generate_single_turn_with_retry(
+            messages=[{"role": m["role"], "content": m["content"]} for m in messages],  # Convert to simple format for API
             persona=persona,
             model=model,
             role=role,
-            turn_number=turn
+            turn_number=turn,
+            thinking=thinking
         )
-        if response is None:
+        
+        if turn_result is None:
             logger.error(f"{role.capitalize()} turn {turn} failed permanently, ending conversation")
             break
-        messages.append({"role": role, "content": response})
+        
+        messages.append({
+            "role": role, 
+            "content": turn_result['content'],
+            "api_log": turn_result['api_log']
+        })
+    
     return messages
 
 # --- Main Logic ---
@@ -254,78 +276,58 @@ async def main():
     """Main function to generate synthetic conversations."""
     print("Starting synthetic conversation generation pipeline...", flush=True)
     parser = argparse.ArgumentParser(description="Generate synthetic conversations for character evaluation.")
-    parser.add_argument("--num-conversations", type=int, default=5, help="Number of new conversations to generate.")
+    parser.add_argument("--num-conversations", type=int, default=0, help="Number of conversations to generate. If 0, uses all contexts from the context file.")
     parser.add_argument("--num-turns", type=int, default=5, help="Number of turns per conversation.")
     parser.add_argument("--user-persona", type=str, default="hates_customers_candidate", help="ID of the user persona from character_definitions.json.")
     parser.add_argument("--assistant-persona", type=str, required=True, help="ID of the assistant persona from character_definitions.json.")
-    parser.add_argument("--assistant-model", type=str, default="openrouter", required=True, help="Model name for the assistant (e.g., 'openrouter/google/gemma-7b-it').")
-    parser.add_argument("--user-model", type=str, default="anthropic/claude-sonnet-4-20250514", help="Model name for the user persona.")
-    parser.add_argument("--topic", type=str, default="A difficult customer service interaction at a coffee shop.", help="Topic for generating diverse conversation starters.")
+    parser.add_argument("--assistant-model", type=str, default="anthropic/claude-sonnet-4-20250514", help="Model name for the assistant.")
+    parser.add_argument("--user-model", type=str, default="openrouter/qwen/qwen3-32b", help="Model name for the user persona.")
+    parser.add_argument("--context-file", type=str, required=True, help="Path to a JSON file containing a list of initial context strings.")
     parser.add_argument("--output-file", type=str, help="Specific name for the output JSONL file.")
-    parser.add_argument("--input-file", type=str, help="Path to an existing conversation file to append new conversations to.")
+    parser.add_argument("--thinking", action="store_true", help="Enable thinking mode for supported models.")
     
     args = parser.parse_args()
 
     all_characters = load_character_definitions()
     print(f"Loaded {len(all_characters)} character definitions (personas).")
     
-    output_dir = os.path.join(project_root, "evals", "synthetic_evaluation_data")
+    output_dir = os.path.join(project_root, "evals", "synthetic_evaluation_data", "conversations")
     os.makedirs(output_dir, exist_ok=True)
 
-    metadata = {}
-    existing_conversations = []
-
-    if args.input_file:
-        # Load existing file to append more conversations
-        output_file_path = args.input_file
-        try:
-            with open(output_file_path, 'r') as f:
-                lines = f.readlines()
-                if not lines:
-                    print(f"Error: Input file '{output_file_path}' is empty.")
-                    return
-                metadata = json.loads(lines[0])["metadata"]
-                existing_conversations = [json.loads(line) for line in lines[1:]]
-            
-            # Override args with loaded metadata for consistency
-            args.num_turns = metadata.get("num_turns", args.num_turns)
-            args.user_persona = metadata.get("user_persona", args.user_persona)
-            args.assistant_persona = metadata.get("assistant_persona", args.assistant_persona)
-            args.assistant_model = metadata.get("assistant_model", args.assistant_model)
-            args.user_model = metadata.get("user_model", args.user_model)
-            args.topic = metadata.get("topic", args.topic)
-            print(f"Appending {args.num_conversations} new conversations to '{output_file_path}'...")
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"Error reading input file '{output_file_path}': {e}")
-            return
-    else:
-        # Create a new file
-        if args.output_file:
-            filename = args.output_file if args.output_file.endswith(".jsonl") else f"{args.output_file}.jsonl"
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{args.assistant_persona}_vs_{args.user_persona}_{timestamp}.jsonl"
-        
-        output_file_path = os.path.join(output_dir, filename)
-        metadata = vars(args)
-        print(f"Generating {args.num_conversations} new conversations and saving to '{output_file_path}'...")
-
-    # Generate contexts with retry
-    print("Generating diverse starting contexts...")
+    # Load contexts from file
+    print(f"Loading contexts from {args.context_file}...")
     try:
-        # Ensure correct backoff parameters before passing function args
-        initial_contexts = await retry_with_backoff(
-            generate_diverse_contexts,
-            MAX_CONVERSATION_RETRIES,
-            RETRY_BACKOFF_BASE,
-            RETRY_BACKOFF_MAX,
-            args.topic,
-            args.num_conversations,
-            args.user_model
-        )
-    except Exception as e:
-        print(f"Failed to generate contexts after retries: {e}")
+        with open(args.context_file, 'r') as f:
+            initial_contexts = json.load(f)
+        if not isinstance(initial_contexts, list):
+            raise ValueError("Context file must contain a JSON list of strings.")
+        
+        if args.num_conversations > 0 and args.num_conversations < len(initial_contexts):
+            initial_contexts = initial_contexts[:args.num_conversations]
+        else:
+            # Use all contexts from the file
+            args.num_conversations = len(initial_contexts)
+            
+        print(f"Loaded {len(initial_contexts)} contexts to be processed.")
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        print(f"Error loading or parsing context file: {e}")
         return
+
+    if args.output_file:
+        filename = args.output_file if args.output_file.endswith(".jsonl") else f"{args.output_file}.jsonl"
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Sanitize persona names for filename
+        assistant_persona_sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '', args.assistant_persona)
+        user_persona_sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '', args.user_persona)
+        filename = f"{assistant_persona_sanitized}_vs_{user_persona_sanitized}_{timestamp}.jsonl"
+    
+    output_file_path = os.path.join(output_dir, filename)
+    
+    metadata = vars(args)
+    existing_conversations = []
+    
+    print(f"Generating {args.num_conversations} new conversations and saving to '{output_file_path}'...")
 
     user_persona_details = all_characters[args.user_persona]
     assistant_persona_details = all_characters[args.assistant_persona]
@@ -347,7 +349,8 @@ async def main():
             user_model=args.user_model,
             assistant_model=args.assistant_model,
             initial_context=context,
-            num_turns=args.num_turns
+            num_turns=args.num_turns,
+            thinking=args.thinking
         )
         tasks.append(task)
     

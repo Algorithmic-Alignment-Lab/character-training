@@ -1,17 +1,27 @@
 import litellm
+from litellm.caching.caching import Cache
 import logging
 from typing import Optional, Type, TypeVar, List, Dict, Any
 from pydantic import BaseModel, Field, ValidationError
 import json
 import re
 import asyncio
+from evals.models import APICallLog, LLMCallResult
 
 # load dotenv variables if available
 from dotenv import load_dotenv
 load_dotenv()
 
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Enable litellm local cache (in-memory by default) ---
+litellm.cache = Cache()  # You can specify type=... for redis, s3, etc.
+
+# Example usage:
+# litellm.cache.add_cache(cache_key="mykey", result="response")
+# litellm.cache.get_cache(cache_key="mykey")
 
 # --- Pydantic Models for Structured Responses ---
 
@@ -56,11 +66,13 @@ async def call_llm_api(
     model: str,
     response_model: Optional[Type[T]] = None,
     temperature: float = 0.7,
-    max_tokens: int = 1024,
+    max_tokens: int = 4096,
     max_retries: int = 5,
-) -> T | str:
+    thinking: bool = False,
+    caching: bool = True,
+) -> LLMCallResult:
     """
-    Makes an asynchronous call to an LLM API using litellm, with a fallback to OpenRouter for Anthropic models.
+    Makes an asynchronous call to an LLM API using litellm, with comprehensive logging.
 
     Args:
         messages: A list of messages in the conversation.
@@ -69,141 +81,176 @@ async def call_llm_api(
         temperature: The temperature for sampling.
         max_tokens: The maximum number of tokens to generate.
         max_retries: The number of retries for the initial API call.
+        thinking: (deprecated) Ignored, kept for compatibility.
+        caching: Whether to use litellm caching (default True).
 
     Returns:
-        If a response_model is provided, returns an instance of that model.
-        Otherwise, returns the raw text response as a string.
-        Returns an error message string if all API calls fail.
+        LLMCallResult containing the response, structured response (if applicable), and API log.
     """
     
+    original_model = model
+    reasoning_content = None
+    raw_response_dict = None
+    response_text = ""
+    error_msg = None
+
     fallback_model = None
+    if model == "claude-sonnet-4-20250514":
+        model = "anthropic/claude-sonnet-4-20250514"
+
     if model == "anthropic/claude-sonnet-4-20250514":
         fallback_model = "openrouter/anthropic/claude-sonnet-4"
+    elif "claude" in model:
+        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+    elif "qwen" not in model:
+        fallback_model = "openrouter/qwen/qwen3-32b"
 
     try:
-        # First attempt to call the model directly
         logger.info(f"Attempting to call model: {model}")
-        raw_response = await litellm.acompletion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=45.0,
-            max_retries=max_retries
-        )
-        response_text = raw_response.choices[0].message.content or ""
+        completion_params = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "timeout": 60.0,
+            "max_retries": max_retries,
+            "caching": caching
+        }
+        # For Claude models, always add reasoning_effort
+        if "claude" in model:
+            completion_params["reasoning_effort"] = "medium"
+        raw_response = await litellm.acompletion(**completion_params)
+        raw_response_dict = raw_response.dict()
+        # Extract content and reasoning_content
+        if 'choices' in raw_response_dict and raw_response_dict['choices']:
+            choice = raw_response_dict['choices'][0]
+            if 'message' in choice:
+                response_text = choice['message'].get('content', '')
+                reasoning_content = choice['message'].get('reasoning_content', None)
+            else:
+                response_text = str(raw_response_dict)
+        else:
+            response_text = str(raw_response_dict)
         logger.info(f"Successfully received response from {model}")
-
     except Exception as e:
         logger.warning(f"Initial API call for model {model} failed: {e}. Attempting fallback.")
-        
+        error_msg = f"API call for model {original_model} failed. Error: {e}"
+        # Try fallback if we have one
         if fallback_model:
-            logger.info(f"Falling back to OpenRouter model: {fallback_model}")
             try:
-                raw_response = await litellm.acompletion(
-                    model=fallback_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=45.0,
-                    max_retries=max_retries
-                )
-                response_text = raw_response.choices[0].message.content or ""
-                logger.info(f"Successfully received response from fallback model {fallback_model}")
-            except Exception as e_fallback:
-                error_message = f"Fallback API call for model {fallback_model} also failed: {e_fallback}"
-                logger.error(error_message)
-                return f"[ERROR: {error_message}]"
+                logger.info(f"Attempting to call fallback model: {fallback_model}")
+                completion_params = {
+                    "model": fallback_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "timeout": 60.0,
+                    "max_retries": max_retries,
+                    "caching": caching
+                }
+                if "claude" in fallback_model and "reasoning_effort" in completion_params:
+                    # Remove reasoning_effort for fallback model
+                    pass
+                elif "reasoning_effort" in completion_params:
+                    del completion_params["reasoning_effort"]
+                raw_response = await litellm.acompletion(**completion_params)
+                raw_response_dict = raw_response.dict()
+                if 'choices' in raw_response_dict and raw_response_dict['choices']:
+                    choice = raw_response_dict['choices'][0]
+                    if 'message' in choice:
+                        response_text = choice['message'].get('content', '')
+                        reasoning_content = choice['message'].get('reasoning_content', None)
+                    else:
+                        response_text = str(raw_response_dict)
+                else:
+                    response_text = str(raw_response_dict)
+                model = fallback_model  # Update model for logging
+                error_msg = None  # Clear error since fallback succeeded
+                logger.info(f"Successfully received response from {fallback_model}")
+            except Exception as fallback_e:
+                error_msg = f"API call for model {original_model} and fallback {fallback_model} failed. Error: {fallback_e}"
+                logger.error(error_msg)
+                response_text = f"[ERROR: {error_msg}]"
         else:
-            # Generic error if the failed model is not the one with a specific fallback
-            error_message = f"API call for model {model} failed and no specific fallback is configured. Error: {e}"
-            logger.error(error_message)
-            return f"[ERROR: {error_message}]"
+            logger.error(error_msg)
+            response_text = f"[ERROR: {error_msg}]"
 
-    if not response_model:
-        return response_text
+    # Create API log
+    api_log = APICallLog(
+        model=model,
+        messages=messages,
+        raw_response=raw_response_dict if raw_response_dict else response_text,
+        thinking_content=reasoning_content
+    )
 
-    # If a model is expected, clean and parse the text
-    cleaned_text = clean_json_string(response_text)
-    
-    try:
-        return response_model.parse_raw(cleaned_text)
-    except (ValidationError, json.JSONDecodeError) as e_parse:
-        error_message = f"Failed to parse {response_model.__name__} from response. Error: {e_parse}. Raw text: '{cleaned_text}'"
-        logger.error(error_message)
-        # Fallback: return the raw (but cleaned) text for the caller to handle
-        return cleaned_text
+    # Parse structured response if requested
+    structured_response = None
+    if response_model and not error_msg and not response_text.startswith("[ERROR:"):
+        try:
+            cleaned_response = clean_json_string(response_text)
+            structured_response = response_model.parse_raw(cleaned_response)
+        except (ValidationError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to parse response into {response_model.__name__}. Error: {e}. Raw response: {response_text}")
+            error_msg = f"Failed to parse response. Raw text: {response_text}"
 
-def get_llm_response(system_prompt: str, messages: List[Dict[str, str]], model: str) -> str:
+    return LLMCallResult(
+        response_text=response_text,
+        structured_response=structured_response,
+        api_log=api_log,
+        error=error_msg,
+        thinking=reasoning_content
+    )
+
+
+async def call_llm_api_with_structured_response(
+    messages: List[Dict[str, str]],
+    model: str,
+    response_model: Type[T],
+    temperature: float = 0.2,
+    max_tokens: int = 4096, # Increased max_tokens
+    max_retries: int = 3,
+    thinking: bool = False,
+) -> Optional[T]:
     """
-    Constructs the message list and gets a synchronous response from the LLM.
+    Calls the LLM API and expects a response that can be parsed into the given Pydantic model.
 
     Args:
-        system_prompt: The system prompt to use.
-        messages: The list of messages in the conversation.
-        model: The model to use.
+        messages: A list of messages in the conversation.
+        model: The model to use for the completion.
+        response_model: The Pydantic model to parse the response into.
+        temperature: The temperature for sampling.
+        max_tokens: The maximum number of tokens to generate.
+        max_retries: The number of retries for the API call.
+        thinking: Whether to enable the 'thinking' feature for Claude models.
 
     Returns:
-        The LLM's response as a string.
+        An instance of the response_model with the parsed response data, or None if parsing fails.
     """
-    # Construct the full message list with the system prompt
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
-
-    # Run the async API call in a sync context
-    # This is a simple approach; for complex apps, manage the event loop carefully.
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:  # 'RuntimeError: There is no current event loop...'
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    response = loop.run_until_complete(call_llm_api(
-        messages=full_messages,
+    result = await call_llm_api(
+        messages=messages,
         model=model,
-        response_model=None  # We just want the string response
-    ))
-
-    if isinstance(response, str):
-        return response
+        response_model=response_model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        max_retries=max_retries,
+        thinking=thinking
+    )
     
-    # If the response is a Pydantic model (e.g., on parsing failure fallback),
-    # try to extract content or convert to a string.
-    if hasattr(response, 'content'):
-        return response.content
+    if result.error:
+        logger.error(f"Error in structured response call: {result.error}")
+        return None
     
-    return str(response)
-
-
-async def get_llm_response_stream(system_prompt: str, messages: List[Dict[str, str]], model: str):
-    """
-    Constructs the message list and gets a streaming response from the LLM.
-
-    Args:
-        system_prompt: The system prompt to use.
-        messages: The list of messages in the conversation.
-        model: The model to use.
-
-    Yields:
-        Chunks of the LLM's response as strings.
-    """
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
-
-    try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=full_messages,
-            stream=True,
-            temperature=0.7,
-            max_tokens=2048,
-            timeout=30.0
-        )
-
-        async for chunk in response:
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
-
-    except Exception as e:
-        error_message = f"Error during streaming from {model}: {e}"
-        logger.error(error_message)
-        yield f"[ERROR: {error_message}]"
+    if result.structured_response:
+        return result.structured_response
+    
+    # Try to parse the response text if structured_response is None but we have text
+    if result.response_text and not result.response_text.startswith("[ERROR:"):
+        try:
+            cleaned_response = clean_json_string(result.response_text)
+            return response_model.parse_raw(cleaned_response)
+        except (ValidationError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to parse response text into {response_model.__name__}. Error: {e}. Raw content: {result.response_text}")
+            return None
+    
+    logger.warning(f"Could not extract structured response from result")
+    return None

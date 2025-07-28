@@ -4,6 +4,7 @@ import time
 import json
 import fire
 from datetime import datetime
+from dotenv import load_dotenv
 
 # Make sure to set the TOGETHER_API_KEY environment variable
 
@@ -96,8 +97,8 @@ def save_model_info(model_info: dict, output_dir: str = "evals/finetuning/"):
     print(f"Fine-tuned model info saved to: {output_file}")
 
 def main(
-    prepared_data_file: str,
-    model: str = "Qwen/Qwen1.5-32B-Chat",
+    train_file: str,
+    model: str = "Qwen/Qwen3-32B",
     n_epochs: int = 3,
     suffix: str = "customer_service_eval",
 ):
@@ -105,18 +106,19 @@ def main(
     Main function to run the fine-tuning pipeline.
     
     Args:
-        prepared_data_file: Path to the JSONL file prepared for fine-tuning.
+        train_file: Path to the JSONL file prepared for fine-tuning.
         model: The base model to fine-tune.
         n_epochs: The number of epochs for training.
         suffix: A suffix to add to the fine-tuned model name.
     """
+    load_dotenv()
     if not os.getenv("TOGETHER_API_KEY"):
         print("Error: TOGETHER_API_KEY environment variable not set.")
         return
 
     try:
         # 1. Upload the data file
-        file_id = get_file_id(prepared_data_file)
+        file_id = get_file_id(train_file)
         
         # 2. Start the fine-tuning job
         job_id = run_finetuning(file_id, model, n_epochs, suffix)

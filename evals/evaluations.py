@@ -36,7 +36,7 @@ class ConversationEvaluation:
 class CharacterEvaluator:
     """Automated character evaluation using LLM judges"""
     
-    def __init__(self, judge_model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, judge_model: str = "claude-sonnet-4-20250514"):
         self.judge_model = judge_model
         self.api = InferenceAPI()
         
