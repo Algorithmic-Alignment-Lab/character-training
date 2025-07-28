@@ -42,8 +42,8 @@ class InterviewAnalysis(BaseModel):
 
 
 sonnet_4 = "claude-sonnet-4-20250514"
-sonnet_3_5 = "claude-3-5-sonnet-20240620"
-sonnet_3_6 = "claude-3-5-sonnet-20241022"
+sonnet_3_5 = "claude-sonnet-4-20250514"
+sonnet_3_6 = "claude-sonnet-4-20250514"
 sonnet_3_7 = "claude-3-7-sonnet-20250219"
 haiku = "claude-3-5-haiku-20241022"
 grok_4 = "x-ai/grok-4"
@@ -52,7 +52,7 @@ opus_4 = "claude-opus-4-20250514"
 llama_3_3_70b = "meta-llama/llama-3.3-70b-instruct"
 gemma_3_27b = "google/gemma-3-27b-it"
 qwen3_32b = "qwen/qwen3-32b"
-sonnet_3_6 = "claude-3-5-sonnet-20241022"
+sonnet_3_6 = "claude-sonnet-4-20250514"
 
 
 character_prompts = {

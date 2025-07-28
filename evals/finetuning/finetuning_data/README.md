@@ -1,0 +1,1 @@
+This folder will contain fine-tuning-ready JSONL files generated from raw conversation logs. Each file should be formatted for Together AI fine-tuning (one conversation per line, with a 'messages' list of role/content pairs).

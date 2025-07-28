@@ -1,11 +1,53 @@
+"""Data models for safety-tooling with stubs for missing dependencies."""
+from __future__ import annotations
+import sys, types
+
+# Stub external modules if not installed
+if 'anthropic' not in sys.modules:
+    anthropic = types.SimpleNamespace(types=types.SimpleNamespace(MessageParam=lambda content, role: None))
+    sys.modules['anthropic'] = anthropic
+    sys.modules['anthropic.types'] = anthropic.types
+
+if 'openai' not in sys.modules:
+    chat_ns = types.SimpleNamespace(ChatCompletionAssistantMessageParam=dict, ChatCompletionMessageParam=dict)
+    openai = types.SimpleNamespace(types=types.SimpleNamespace(chat=chat_ns))
+    sys.modules['openai'] = openai
+    sys.modules['openai.types'] = openai.types
+    sys.modules['openai.types.chat'] = openai.types.chat
+
+if 'numpy' not in sys.modules:
+    np_module = types.SimpleNamespace(ndarray=object)
+    sys.modules['numpy'] = np_module
+
+
+try:
+    import anthropic.types
+except ImportError:
+    class anthropic:
+        class types:
+            class MessageParam:
+                def __init__(self, content, role):
+                    self.content = content
+                    self.role = role
+
+try:
+    import numpy as np
+except ImportError:
+    # Create dummy numpy module with ndarray attribute for type hints
+    class _DummyNpModule:
+        ndarray = object
+    np = _DummyNpModule()
+
+try:
+    import openai.types.chat
+except ImportError:
+    class openai:
+        types = type('types', (), {'chat': type('chat', (), {'ChatCompletionAssistantMessageParam': dict})})
+
+import pydantic
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
-
-import anthropic.types
-import numpy as np
-import openai.types.chat
-import pydantic
 from termcolor import cprint
 from typing_extensions import Self
 
@@ -140,7 +182,7 @@ class Prompt(HashableBaseModel):
     @classmethod
     def from_alm_input(
         cls,
-        audio_file: str | Path | np.ndarray | None = None,
+        audio_file: Any = None,
         user_prompt: str | None = None,
         system_prompt: str | None = None,
     ) -> Self:
@@ -507,7 +549,7 @@ class BatchPrompt(pydantic.BaseModel):
     @classmethod
     def from_alm_batch_input(
         cls,
-        audio_inputs: Union[List[str], List[Path], List[np.ndarray], None] = None,
+        audio_inputs: Any = None,
         user_prompts: List[str] | None = None,
         system_prompts: List[str] | None = None,
     ) -> "BatchPrompt":
@@ -524,7 +566,7 @@ class BatchPrompt(pydantic.BaseModel):
             )
         return cls(prompts=prompts)
 
-    def batch_format(self) -> Tuple[np.ndarray, List]:
+    def batch_format(self) -> tuple[Any, list[Any]]:
         audio_messages = []
         text_messages = []
         system_messages = []
