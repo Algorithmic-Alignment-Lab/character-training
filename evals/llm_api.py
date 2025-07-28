@@ -65,7 +65,7 @@ async def call_llm_api(
     messages: List[Dict[str, str]],
     model: str,
     response_model: Optional[Type[T]] = None,
-    temperature: float = 0.7,
+    temperature: float = 1,
     max_tokens: int = 4096,
     max_retries: int = 5,
     thinking: bool = False,
@@ -107,10 +107,12 @@ async def call_llm_api(
 
     try:
         logger.info(f"Attempting to call model: {model}")
+        # If thinking is True, set temperature to 1 (Anthropic requirement)
+        temp_to_use = 1.0 if thinking else temperature
         completion_params = {
             "model": model,
             "messages": messages,
-            "temperature": temperature,
+            "temperature": temp_to_use,
             "max_tokens": max_tokens,
             "timeout": 60.0,
             "max_retries": max_retries,

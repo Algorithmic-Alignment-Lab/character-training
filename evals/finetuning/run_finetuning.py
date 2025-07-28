@@ -34,7 +34,7 @@ def run_finetuning(
             model=model,
             n_epochs=n_epochs,
             n_checkpoints=1,
-            batch_size=4,
+            batch_size=8,
             learning_rate=1e-5,
             suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}",
         )
@@ -50,7 +50,7 @@ def follow_finetuning_job(job_id: str) -> dict:
     print(f"Following fine-tuning job: {job_id}. This may take a while...")
     while True:
         try:
-            response = together.Finetune.retrieve(id=job_id)
+            response = together.Finetune.retrieve(job_id)
             status = response['status']
             print(f"Current job status: {status}")
             

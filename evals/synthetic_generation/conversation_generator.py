@@ -234,12 +234,10 @@ async def generate_single_conversation(
     """Generates a single multi-turn conversation with comprehensive error handling and logging."""
     # start with initial user message (no API call needed for this)
     messages = [{"role": "user", "content": initial_context, "api_log": None}]
-    
-    # alternate single-role turns for num_turns messages
+
+    # alternate roles for num_turns, starting with assistant after user
     for turn in range(num_turns):
-        # decide next role based on last message
-        last_role = messages[-1]["role"]
-        if last_role == "user":
+        if turn % 2 == 0:
             role = "assistant"
             persona = assistant_persona
             model = assistant_model
@@ -247,27 +245,26 @@ async def generate_single_conversation(
             role = "user"
             persona = user_persona
             model = user_model
-        
-        # generate one turn
+
         turn_result = await generate_single_turn_with_retry(
-            messages=[{"role": m["role"], "content": m["content"]} for m in messages],  # Convert to simple format for API
+            messages=[{"role": m["role"], "content": m["content"]} for m in messages],
             persona=persona,
             model=model,
             role=role,
             turn_number=turn,
             thinking=thinking
         )
-        
+
         if turn_result is None:
             logger.error(f"{role.capitalize()} turn {turn} failed permanently, ending conversation")
             break
-        
+
         messages.append({
-            "role": role, 
+            "role": role,
             "content": turn_result['content'],
             "api_log": turn_result['api_log']
         })
-    
+
     return messages
 
 # --- Main Logic ---
@@ -300,15 +297,33 @@ async def main():
         with open(args.context_file, 'r') as f:
             initial_contexts = json.load(f)
         if not isinstance(initial_contexts, list):
-            raise ValueError("Context file must contain a JSON list of strings.")
-        
-        if args.num_conversations > 0 and args.num_conversations < len(initial_contexts):
-            initial_contexts = initial_contexts[:args.num_conversations]
+            raise ValueError("Context file must contain a JSON list of dicts or strings.")
+
+        # Prepend supporting documents to the starting prompt if present
+        processed_contexts = []
+        for ctx in initial_contexts:
+            if isinstance(ctx, dict) and "starting_prompt" in ctx:
+                # Compose supporting docs as plain text
+                docs = ctx.get("supporting_documents", [])
+                docs_text = ""
+                for doc in docs:
+                    doc_type = doc.get("doc_type", "document")
+                    content = doc.get("content", "")
+                    docs_text += f"[{doc_type.upper()}]\n{content}\n\n"
+                full_prompt = f"{docs_text}{ctx['starting_prompt']}"
+                processed_contexts.append(full_prompt)
+            else:
+                # Assume string or legacy format
+                processed_contexts.append(ctx)
+
+        # Only use the first N contexts if num_conversations is set
+        if args.num_conversations > 0:
+            processed_contexts = processed_contexts[:args.num_conversations]
+            args.num_conversations = len(processed_contexts)
         else:
-            # Use all contexts from the file
-            args.num_conversations = len(initial_contexts)
-            
-        print(f"Loaded {len(initial_contexts)} contexts to be processed.")
+            args.num_conversations = len(processed_contexts)
+
+        print(f"Loaded {len(processed_contexts)} contexts to be processed.")
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
         print(f"Error loading or parsing context file: {e}")
         return
@@ -336,9 +351,9 @@ async def main():
     print(f"Generating {args.num_conversations} conversations using {MAX_CONCURRENT_WORKERS} parallel workers...")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_WORKERS)
     
-    # Create tasks for each conversation
+    # Create tasks for each conversation (use processed_contexts, not initial_contexts)
     tasks = []
-    for i, context in enumerate(initial_contexts):
+    for i, context in enumerate(processed_contexts):
         task_id = f"conv_{i+1}"
         task = generate_single_conversation_worker(
             semaphore=semaphore,

@@ -2,24 +2,13 @@ import os
 import sys
 import json
 from typing import Dict, Any, List
-
-# Add project root to Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-
-from evals.evaluation_framework.base_evaluator import BaseEvaluator
-from conversations_ui.llm_api import call_llm_api
-
-import os
-import sys
-import json
-from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 
 # Add project root to Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from evals.evaluation_framework.base_evaluator import BaseEvaluator
-from conversations_ui.llm_api import call_llm_api
+from evals.llm_api import call_llm_api, call_llm_api_with_structured_response
 
 class TraitScore(BaseModel):
     trait: str = Field(description="The trait being evaluated.")
@@ -77,7 +66,7 @@ class TraitAdherenceEvaluator(BaseEvaluator):
         messages = [{"role": "user", "content": judge_prompt}]
         
         try:
-            response = await call_llm_api(messages, self.judge_model, response_format=TraitAdherenceResult)
+            response = await call_llm_api_with_structured_response(messages, self.judge_model, TraitAdherenceResult)
             if isinstance(response, dict) and "error" in response:
                 return response
             return response.model_dump()

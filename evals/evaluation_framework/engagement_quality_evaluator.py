@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from evals.evaluation_framework.base_evaluator import BaseEvaluator
-from conversations_ui.llm_api import call_llm_api
+from evals.llm_api import call_llm_api_with_structured_response
 
 class EngagementQualityResult(BaseModel):
     reasoning: str = Field(description="Detailed reasoning for the engagement score.")
@@ -51,7 +51,7 @@ class EngagementQualityEvaluator(BaseEvaluator):
         messages = [{"role": "user", "content": prompt}]
         
         try:
-            response = await call_llm_api(messages, self.judge_model, response_format=EngagementQualityResult)
+            response = await call_llm_api_with_structured_response(messages, self.judge_model, EngagementQualityResult)
             if isinstance(response, dict) and "error" in response:
                 return response
             return response.model_dump()

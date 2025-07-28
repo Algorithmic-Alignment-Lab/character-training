@@ -179,3 +179,4 @@ class LLMCallResult(BaseModel):
     structured_response: Optional[Any] = None
     api_log: APICallLog
     error: Optional[str] = None
+    thinking_content: Optional[str] = None
