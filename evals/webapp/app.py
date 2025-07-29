@@ -253,11 +253,21 @@ def evals_page(project_root):
                             for eval_name, result in eval_results.items():
                                 st.markdown(f"#### {eval_name.replace('_', ' ').title()}")
                                 score, reasoning = extract_score(eval_name, result)
-                                score, reasoning = extract_score(eval_name, result)
-                                st.metric(label="Average Score" if eval_name.lower() == 'traitadherence' else "Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
-                                
-                                if reasoning:
-                                    st.text_area("Reasoning", reasoning, height=120, disabled=True, key=f"reasoning_{eval_name}_{selected_convo_data['conversation_id']}")
+                                # the score and reasoning should be the average of trait scores if metric is trait adherence
+                                if np.isnan(score):
+                                    if eval_name.lower() == "traitadherence" and "trait_scores" in result:
+                                        trait_scores = [s.get('score') for s in result["trait_scores"] if s.get('score') is not None]
+                                        if trait_scores:
+                                            score = np.mean(trait_scores)
+                                            reasoning = "Average of trait scores: " + ', '.join([f"{s['trait']}: {s['score']}" for s in result["trait_scores"]])
+                                        else:
+                                            score = np.nan
+                                            reasoning = "No valid trait scores found."
+                                else:
+                                    st.metric(label="Average Score" if eval_name.lower() == 'traitadherence' else "Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
+                                    
+                                    if reasoning:
+                                        st.text_area("Reasoning", reasoning, height=120, disabled=True, key=f"reasoning_{eval_name}_{selected_convo_data['conversation_id']}")
                                 
                                 if eval_name.lower() == "traitadherence" and "trait_scores" in result:
                                     with st.expander("Individual Trait Scores"):
@@ -275,8 +285,9 @@ def evals_page(project_root):
                     with detail_tabs[2]:
                         context_data = selected_convo_data.get("context", {})
                         if context_data:
-                            display_context_file(context_data.get('supporting_documents', []))
+                            st.json(context_data)
                         else:
+                            st.info("No context available for this conversation.")
                             st.info("No context available for this conversation.")
             except json.JSONDecodeError:
                 st.error(f"Failed to parse summary file: {summary_file}")
