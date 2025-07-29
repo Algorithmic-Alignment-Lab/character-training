@@ -118,10 +118,10 @@ def display_context_file(context_data: list):
             # Put supporting documents in a single expander
             if "supporting_documents" in context_item and context_item["supporting_documents"]:
                 with st.expander("View Supporting Documents"):
-                    for doc in context_item["supporting_documents"]:
+                    for doc_index, doc in enumerate(context_item["supporting_documents"]):
                         if isinstance(doc, dict):
                             for key, value in doc.items():
-                                st.text_area(key, value, height=150, disabled=True)
+                                st.text_area(key, value, height=150, disabled=True, key=f"context_doc_{i}_{doc_index}_{key}")
                         else:
                             st.text(str(doc))
             
@@ -253,6 +253,7 @@ def evals_page(project_root):
                             for eval_name, result in eval_results.items():
                                 st.markdown(f"#### {eval_name.replace('_', ' ').title()}")
                                 score, reasoning = extract_score(eval_name, result)
+                                score, reasoning = extract_score(eval_name, result)
                                 st.metric(label="Average Score" if eval_name.lower() == 'traitadherence' else "Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
                                 
                                 if reasoning:
@@ -277,6 +278,7 @@ def evals_page(project_root):
                             display_context_file(context_data.get('supporting_documents', []))
                         else:
                             st.info("No context available for this conversation.")
+            except json.JSONDecodeError:
                 st.error(f"Failed to parse summary file: {summary_file}")
         else:
             st.error(f"evaluation_summary.json not found in {run_options[selected_run_name]}")
