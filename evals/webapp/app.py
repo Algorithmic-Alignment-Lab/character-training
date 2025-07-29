@@ -55,21 +55,30 @@ def calculate_aggregate_metrics(results_per_conversation: list) -> pd.DataFrame:
     for convo in results_per_conversation:
         eval_results = convo.get("evaluation_results", {})
         for eval_name, result in eval_results.items():
-            if eval_name not in all_scores:
-                all_scores[eval_name] = []
+            # Normalize eval_name to handle potential case inconsistencies
+            normalized_eval_name = eval_name.lower()
+            if normalized_eval_name not in all_scores:
+                all_scores[normalized_eval_name] = []
             
-            score, _ = extract_score(eval_name, result)
-            if not np.isnan(score):
-                all_scores[eval_name].append(score)
+            if normalized_eval_name == "traitadherence":
+                if "trait_scores" in result and result["trait_scores"]:
+                    scores = [s.get('score') for s in result["trait_scores"]]
+                    valid_scores = [s for s in scores if s is not None]
+                    all_scores[normalized_eval_name].extend(valid_scores) # Use extend to gather all trait scores
+            else:
+                score, _ = extract_score(normalized_eval_name, result)
+                if not np.isnan(score):
+                    all_scores[normalized_eval_name].append(score)
 
     summary_data = []
     for eval_name, scores in all_scores.items():
         if scores:
             avg_score = np.mean(scores)
+            num_evaluated = len(results_per_conversation) if eval_name == "traitadherence" else len(scores)
             summary_data.append({
                 "Evaluation": eval_name.replace('_', ' ').title(),
                 "Average Score": f"{avg_score:.2f}/7",
-                "Conversations Evaluated": len(scores)
+                "Conversations Evaluated": num_evaluated
             })
         else:
             summary_data.append({
@@ -95,209 +104,206 @@ def get_convo_display_name(convo: dict) -> str:
         return f"{timestamp} - {convo_id}"
     return convo_id
 
-def display_json_with_expanders(data, expand_level=1):
-    """Recursively display JSON data with expanders for long fields."""
-    if isinstance(data, dict):
-        for key, value in data.items():
-            # For 'context' files, we want to pretty-print the JSON content
-            if key.endswith('.json') and isinstance(value, str):
-                try:
-                    # Attempt to parse the string as JSON
-                    json_content = json.loads(value)
-                    with st.expander(f"**{key}:** (JSON)", expanded=True):
-                        st.json(json_content)
-                except json.JSONDecodeError:
-                    # If it's not valid JSON, treat as a regular (potentially long) string
-                    if len(value) > 200:
-                         with st.expander(f"**{key}:** (long text)"):
-                            st.text(value)
-                    else:
-                        st.write(f"**{key}:** {value}")
-            elif isinstance(value, (dict, list)) and len(value) > 0:
-                # Use an expander for nested dictionaries or lists
-                with st.expander(f"**{key}:** ({type(value).__name__})", expanded=expand_level > 0):
-                    display_json_with_expanders(value, expand_level - 1)
-            elif isinstance(value, str) and len(value) > 200:
-                # Use an expander for any other long string
-                with st.expander(f"**{key}:** (long text)"):
-                    st.text(value)
-            else:
-                # Otherwise, just write the key-value pair
-                st.write(f"**{key}:** {value}")
-    elif isinstance(data, list):
-        for i, item in enumerate(data):
-            if isinstance(item, (dict, list)) and len(item) > 0:
-                with st.expander(f"**Item {i}:** ({type(item).__name__})", expanded=expand_level > 0):
-                    display_json_with_expanders(item, expand_level - 1)
-            else:
-                st.write(item)
-    else:
-        # For any other data type
-        st.write(data)
+def display_context_file(context_data: list):
+    """Custom function to display context files as requested."""
+    for i, context_item in enumerate(context_data):
+        st.markdown(f"---_Item {i+1}_---")
+        if isinstance(context_item, dict):
+            # Display starting_prompt by default
+            if "starting_prompt" in context_item:
+                with st.container():
+                    st.subheader("Starting Prompt")
+                    st.markdown(context_item["starting_prompt"])
+            
+            # Put supporting documents in a single expander
+            if "supporting_documents" in context_item and context_item["supporting_documents"]:
+                with st.expander("View Supporting Documents"):
+                    for doc in context_item["supporting_documents"]:
+                        if isinstance(doc, dict):
+                            for key, value in doc.items():
+                                st.text_area(key, value, height=150, disabled=True)
+                        else:
+                            st.text(str(doc))
+            
+            # Display any other keys
+            for key, value in context_item.items():
+                if key not in ["starting_prompt", "supporting_documents"]:
+                    st.markdown(f"**{key}:**")
+                    st.json(value)
+        else:
+            st.text(str(context_item))
 
-def main(headless=False):
+def main():
     """
     The main function for the Streamlit evaluation dashboard.
-    If headless is True, it runs a quick check and exits.
     """
     st.set_page_config(layout="wide", page_title="Character Evaluation Dashboard")
-
-    # Initialize session state
-    if 'selected_run_dir' not in st.session_state:
-        st.session_state.selected_run_dir = None
-    if 'selected_convo_data' not in st.session_state:
-        st.session_state.selected_convo_data = None
+    st.title("Character Evaluation Dashboard")
 
     project_root = find_project_root(__file__)
     if not project_root:
         st.error("Could not find the project root. Make sure you are running this from within the project.")
         return
 
-    # Sidebar navigation
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Go to", ["Evals", "Finetuning Results"])
+    # Top-level navigation
+    page = st.sidebar.radio("Navigation", ["Contexts", "Conversations", "Evaluation Results", "Finetuning Results"])
 
-    if page == "Evals":
-        st.title("Character Evaluation Dashboard")
-        st.sidebar.title("Eval Selection")
-        
-        results_dir = project_root / "evals" / "results"
-        if not results_dir.exists():
-            st.error(f"Results directory not found at: {results_dir}")
-            return
-
-        run_dirs = sorted([d for d in results_dir.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime, reverse=True)
-        if not run_dirs:
-            st.warning("No evaluation runs found.")
-            return
-
-        run_options = {d.name: d for d in run_dirs}
-        selected_run_name = st.sidebar.selectbox("Select Evaluation Run", options=list(run_options.keys()))
-
-        if selected_run_name:
-            st.session_state.selected_run_dir = run_options[selected_run_name]
-
-        if st.session_state.selected_run_dir:
-            summary_file = st.session_state.selected_run_dir / "evaluation_summary.json"
-            if summary_file.exists():
-                try:
-                    with open(summary_file, 'r') as f:
-                        data = json.load(f)
-                    
-                    metadata = data.get("metadata", None)
-                    if metadata:
-                        st.sidebar.subheader("Evaluation Metadata")
-                        st.sidebar.json(metadata)
-
-                    results_per_conversation = data.get("results_per_conversation", [])
-
-                    st.header("Aggregate Results")
-                    aggregate_df = calculate_aggregate_metrics(results_per_conversation)
-                    if not aggregate_df.empty:
-                        st.dataframe(aggregate_df)
-                    else:
-                        st.warning("No evaluation results found to aggregate.")
-
-                    st.header("Conversation Selector")
-                    
-                    sorted_conversations = sorted(
-                        results_per_conversation,
-                        key=lambda c: c.get('timestamp', c.get('start_time', 0)),
-                        reverse=True
-                    )
-                    
-                    convo_options = [None] + sorted_conversations
-                    
-                    def format_convo_option(convo):
-                        if convo is None:
-                            return "None"
-                        return get_convo_display_name(convo)
-
-                    selected_convo_data = st.selectbox(
-                        'Select a Conversation to Drill Down',
-                        options=convo_options,
-                        format_func=format_convo_option,
-                        index=0
-                    )
-                    st.session_state.selected_convo_data = selected_convo_data
-                    
-                    if selected_convo_data:
-                        st.divider()
-                        st.header("Conversation Details")
-                        
-                        detail_tabs = st.tabs(["Evaluation Scores", "Conversation Log", "Context"])
-
-                        with detail_tabs[0]:
-                            eval_results = selected_convo_data.get("evaluation_results", {})
-                            if eval_results:
-                                for eval_name, result in eval_results.items():
-                                    st.subheader(eval_name.replace('_', ' ').title())
-                                    if eval_name == "trait_adherence":
-                                        score, reasoning = extract_score(eval_name, result)
-                                        st.metric(label="Average Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
-                                        st.text_area("Overall Reasoning", reasoning, height=150, disabled=True, key=f"reasoning_{eval_name}")
-                                        
-                                        if "trait_scores" in result and result["trait_scores"]:
-                                            with st.expander("Show Individual Trait Scores"):
-                                                for trait_score in result["trait_scores"]:
-                                                    trait_name = trait_score.get('trait', 'Unknown Trait')
-                                                    trait_score_val = trait_score.get('score')
-                                                    trait_reasoning = trait_score.get('reasoning', 'No reasoning provided.')
-                                                    st.markdown(f"**Trait:** {trait_name}")
-                                                    st.markdown(f"**Score:** {trait_score_val:.2f}/7" if trait_score_val is not None else "N/A")
-                                                    st.text_area("Reasoning", trait_reasoning, height=100, disabled=True, key=f"trait_{trait_name}")
-                                    else:
-                                        score, reasoning = extract_score(eval_name, result)
-                                        st.metric(label="Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
-                                        st.text_area("Reasoning", reasoning, height=100, disabled=True, key=f"reasoning_{eval_name}")
-                            else:
-                                st.info("No evaluation scores for this conversation.")
-
-                        with detail_tabs[1]:
-                            for message in selected_convo_data.get("conversation_log", []):
-                                speaker = message.get("speaker", "Unknown")
-                                text = message.get("message", "")
-                                with st.chat_message("user" if speaker.lower() == "user" else "assistant"):
-                                    st.write(text)
-                        
-                        with detail_tabs[2]:
-                            context_data = selected_convo_data.get("context", {})
-                            if context_data:
-                                display_json_with_expanders(context_data)
-                            else:
-                                st.info("No context for this conversation.")
-                                
-                except json.JSONDecodeError:
-                    st.error(f"Failed to parse the summary JSON file: {summary_file}")
-            else:
-                st.error(f"evaluation_summary.json not found in {st.session_state.selected_run_dir}")
-
+    if page == "Contexts":
+        contexts_page(project_root)
+    elif page == "Conversations":
+        conversations_page(project_root)
+    elif page == "Evaluation Results":
+        evals_page(project_root)
     elif page == "Finetuning Results":
-        st.title("Finetuning Results")
-        st.sidebar.title("Model Selection")
+        finetuning_page(project_root)
 
-        finetuning_results_path = project_root / "evals" / "finetuning" / "finetuned_models.json"
-        if finetuning_results_path.exists():
-            with open(finetuning_results_path, 'r') as f:
-                models = json.load(f)
-            
-            if not models:
-                st.warning("No fine-tuned models found.")
-                return
-
-            df = pd.DataFrame(models)
-            
-            selected_model_id = st.sidebar.selectbox("Select a Model by Job ID", df['job_id'])
-            if selected_model_id:
-                selected_model = df[df['job_id'] == selected_model_id].iloc[0]
-                st.sidebar.subheader("Model Details")
-                st.sidebar.write(selected_model)
-
-            st.dataframe(df)
-            st.subheader("Stored Artifacts")
-            st.info("Artifact linking is not yet implemented.")
+def contexts_page(project_root):
+    st.header("Contexts")
+    st.sidebar.title("Context Selection")
+    contexts_dir = project_root / "evals" / "synthetic_evaluation_data" / "contexts"
+    if contexts_dir.exists():
+        context_files = sorted([f for f in contexts_dir.iterdir() if f.is_file() and f.suffix == '.json'], key=os.path.getmtime, reverse=True)
+        if context_files:
+            selected_context_file = st.sidebar.selectbox("Select a context file", context_files, format_func=lambda f: f.name, key="context_selector")
+            if selected_context_file:
+                with open(selected_context_file, 'r') as f:
+                    context_data = json.load(f)
+                display_context_file(context_data)
         else:
-            st.error(f"Finetuning results file not found at: {finetuning_results_path}")
+            st.warning("No context files found.")
+    else:
+        st.error(f"Contexts directory not found at: {contexts_dir}")
+
+def conversations_page(project_root):
+    st.header("Conversations")
+    st.sidebar.title("Conversation Selection")
+    conversations_dir = project_root / "evals" / "synthetic_evaluation_data" / "conversations"
+    if conversations_dir.exists():
+        conversation_files = sorted([f for f in conversations_dir.iterdir() if f.is_file() and f.suffix == '.jsonl'], key=os.path.getmtime, reverse=True)
+        if conversation_files:
+            selected_convo_file = st.sidebar.selectbox("Select a conversation file", conversation_files, format_func=lambda f: f.name, key="conversation_selector")
+            if selected_convo_file:
+                with open(selected_convo_file, 'r') as f:
+                    for line in f:
+                        convo = json.loads(line)
+                        with st.expander(f"Conversation ID: {convo.get('conversation_id')}"):
+                            for message in convo.get("conversation_log", []):
+                                speaker = message.get("role", "Unknown") # Use role for speaker
+                                text = message.get("content", "")
+                                with st.chat_message(speaker):
+                                    st.markdown(text)
+        else:
+            st.warning("No conversation files found.")
+    else:
+        st.error(f"Conversations directory not found at: {conversations_dir}")
+
+def evals_page(project_root):
+    st.header("Evaluation Results")
+    st.sidebar.title("Eval Selection")
+    results_dir = project_root / "evals" / "results"
+    if not results_dir.exists():
+        st.error(f"Results directory not found at: {results_dir}")
+        return
+
+    run_dirs = sorted([d for d in results_dir.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime, reverse=True)
+    if not run_dirs:
+        st.warning("No evaluation runs found.")
+        return
+
+    run_options = {d.name: d for d in run_dirs}
+    selected_run_name = st.sidebar.selectbox("Select Evaluation Run", options=list(run_options.keys()), key="eval_run_selector")
+
+    if selected_run_name:
+        summary_file = run_options[selected_run_name] / "evaluation_summary.json"
+        if summary_file.exists():
+            try:
+                with open(summary_file, 'r') as f:
+                    data = json.load(f)
+                
+                metadata = data.get("run_info", None)
+                if metadata:
+                    st.sidebar.subheader("Run Metadata")
+                    st.sidebar.json(metadata)
+
+                results_per_conversation = data.get("results_per_conversation", [])
+
+                st.subheader("Aggregate Results")
+                aggregate_df = calculate_aggregate_metrics(results_per_conversation)
+                if not aggregate_df.empty:
+                    st.dataframe(aggregate_df)
+                else:
+                    st.warning("No evaluation results found to aggregate.")
+
+                st.subheader("Conversation Selector")
+                selected_convo_data = st.selectbox(
+                    'Select a Conversation to Drill Down',
+                    [None] + results_per_conversation,
+                    format_func=lambda c: "None" if c is None else get_convo_display_name(c),
+                    key="convo_drilldown_selector"
+                )
+                
+                if selected_convo_data:
+                    st.divider()
+                    st.subheader("Conversation Details")
+                    detail_tabs = st.tabs(["Evaluation Scores", "Conversation Log", "Context"])
+
+                    with detail_tabs[0]:
+                        eval_results = selected_convo_data.get("evaluation_results", {})
+                        if eval_results:
+                            for eval_name, result in eval_results.items():
+                                st.markdown(f"#### {eval_name.replace('_', ' ').title()}")
+                                score, reasoning = extract_score(eval_name, result)
+                                st.metric(label="Average Score" if eval_name.lower() == 'traitadherence' else "Score", value=f"{score:.2f}/7" if not np.isnan(score) else "N/A")
+                                
+                                if reasoning:
+                                    st.text_area("Reasoning", reasoning, height=120, disabled=True, key=f"reasoning_{eval_name}_{selected_convo_data['conversation_id']}")
+                                
+                                if eval_name.lower() == "traitadherence" and "trait_scores" in result:
+                                    with st.expander("Individual Trait Scores"):
+                                        for trait in result["trait_scores"]:
+                                            st.markdown(f"**{trait['trait']}:** {trait['score']}/7")
+                                            st.text_area("Trait Reasoning", trait['reasoning'], height=100, disabled=True, key=f"trait_reasoning_{trait['trait']}_{selected_convo_data['conversation_id']}")
+                        else:
+                            st.info("No evaluation scores for this conversation.")
+
+                    with detail_tabs[1]:
+                        for message in selected_convo_data.get("conversation_log", []):
+                            with st.chat_message(message.get('role', 'Unknown')):
+                                st.markdown(message.get('content', ''))
+                    
+                    with detail_tabs[2]:
+                        context_data = selected_convo_data.get("context", {})
+                        if context_data:
+                            display_context_file(context_data.get('supporting_documents', []))
+                        else:
+                            st.info("No context available for this conversation.")
+                st.error(f"Failed to parse summary file: {summary_file}")
+        else:
+            st.error(f"evaluation_summary.json not found in {run_options[selected_run_name]}")
+
+def finetuning_page(project_root):
+    st.header("Finetuning Results")
+    st.sidebar.title("Model Selection")
+    finetuning_results_path = project_root / "evals" / "finetuning" / "finetuned_models.json"
+    if finetuning_results_path.exists():
+        with open(finetuning_results_path, 'r') as f:
+            models = json.load(f)
+        if not models:
+            st.warning("No fine-tuned models found.")
+            return
+
+        df = pd.DataFrame(models)
+        selected_model_id = st.sidebar.selectbox("Select a Model by Job ID", df['job_id'], key="finetune_model_selector")
+        if selected_model_id:
+            selected_model = df[df['job_id'] == selected_model_id].iloc[0]
+            st.sidebar.subheader("Model Details")
+            st.sidebar.json(selected_model.to_dict())
+
+        st.dataframe(df)
+        st.subheader("Stored Artifacts")
+        st.info("Artifact linking is not yet implemented.")
+    else:
+        st.error(f"Finetuning results file not found at: {finetuning_results_path}")
 
 if __name__ == "__main__":
     main()
