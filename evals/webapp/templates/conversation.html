@@ -8,70 +8,75 @@
 <h1>{{ filename }}</h1>
 
 <div class="metadata">
-    <h3>Metadata</h3>
-    <p><strong>Assistant Model:</strong> {{ data.metadata.assistant_model }}</p>
-    <p><strong>User Model:</strong> {{ data.metadata.user_model }}</p>
-    <p><strong>Character:</strong> {{ data.metadata.character }}</p>
-    <p><strong>Total Conversations:</strong> {{ data.metadata.total_conversations }}</p>
-    
-    {% if data.metadata.assistant_system_prompt %}
-    <details>
-        <summary><strong>Assistant System Prompt</strong></summary>
-        <div class="message-content">{{ data.metadata.assistant_system_prompt|markdown }}</div>
-    </details>
-    {% endif %}
+    <h3>Run Info</h3>
+    <p><strong>Assistant Model:</strong> {{ data.run_info.assistant_model }}</p>
+    <p><strong>User Model:</strong> {{ data.run_info.user_model }}</p>
+    <p><strong>Assistant Persona:</strong> {{ data.run_info.assistant_persona }}</p>
+    <p><strong>User Persona:</strong> {{ data.run_info.user_persona }}</p>
+    <p><strong>Num Conversations:</strong> {{ data.run_info.num_conversations }}</p>
+    <p><strong>Timestamp:</strong> {{ data.run_info.timestamp }}</p>
 </div>
 
 <h2>Conversations</h2>
 
-{% for conversation in data.conversations %}
+{% for conversation in data.results_per_conversation %}
 <button class="collapsible">
     Conversation {{ loop.index }} - {{ conversation.conversation_id[:8] }}...
-    {% if conversation.judge_analysis %}
-    <br><small class="violations-summary">Violations: {{ conversation.judge_analysis.total_violations }}</small>
-    {% endif %}
 </button>
 <div class="content">
     <h4>Messages</h4>
-    {% for message in conversation.messages %}
-        <div class="message {{ message.role }}">
-            <div class="message-role">{{ message.role }}</div>
-            <div class="message-content">{{ message.content|markdown }}</div>
+    {% for message in conversation.conversation_log %}
+        <div class="message {{ message.speaker }}">
+            <div class="message-role">{{ message.speaker }}</div>
+            <div class="message-content">{{ message.message|markdown }}</div>
         </div>
     {% endfor %}
-    
-    {% if conversation.judge_analysis %}
+
+    {% if conversation.evaluation_results %}
     <div class="judge-analysis">
         <button class="collapsible judge-collapsible">
-            Judge Analysis ({{ conversation.judge_analysis.total_violations }} violations)
+            Judge Analysis
         </button>
         <div class="content judge-content">
-            <div class="judge-summary">
-                <h5>Summary</h5>
-                <p>{{ conversation.judge_analysis.summary|markdown }}</p>
-            </div>
-            
-            <h5>Individual Violations</h5>
-            {% for violation in conversation.judge_analysis.violations %}
-            <button class="collapsible violation-collapsible">
-                Violation {{ loop.index }} (Score: {{ violation.likert_score }}/5)
-            </button>
-            <div class="content violation-content">
-                <div class="violation-details">
-                    <div class="violation-quote">
-                        <strong>Quote:</strong>
-                        <blockquote>{{ violation.quote|markdown }}</blockquote>
-                    </div>
-                    <div class="violation-context">
-                        <strong>Context:</strong> {{ violation.context|markdown }}
-                    </div>
-                    <div class="violation-explanation">
-                        <strong>Explanation:</strong> {{ violation.explanation|markdown }}
-                    </div>
-                    <div class="violation-score">
-                        <strong>Severity Score:</strong> {{ violation.likert_score }}/5
-                    </div>
-                </div>
+            {% for eval_name, eval_result in conversation.evaluation_results.items() %}
+            <div class="evaluation">
+                <h4>{{ eval_name }}</h4>
+                {% if eval_result.reasoning %}
+                <p><strong>Reasoning:</strong> {{ eval_result.reasoning }}</p>
+                {% endif %}
+
+                {% if eval_result.trait_scores %}
+                <h5>Trait Scores</h5>
+                <ul>
+                    {% for score in eval_result.trait_scores %}
+                    <li><strong>{{ score.trait }}:</strong> {{ score.score }}/7 - {{ score.reasoning }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+
+                {% if eval_result.predictability_score is defined %}
+                <p><strong>Predictability Score:</strong> {{ eval_result.predictability_score }}/7</p>
+                {% endif %}
+                {% if eval_result.authenticity_score is defined %}
+                <p><strong>Authenticity Score:</strong> {{ eval_result.authenticity_score }}/7</p>
+                {% endif %}
+                {% if eval_result.engagement_score is defined %}
+                <p><strong>Engagement Score:</strong> {{ eval_result.engagement_score }}/7</p>
+                {% endif %}
+                {% if eval_result.consistency_score is defined %}
+                <p><strong>Consistency Score:</strong> {{ eval_result.consistency_score }}/7</p>
+                {% endif %}
+                {% if eval_result.retention_score is defined %}
+                <p><strong>Retention Score:</strong> {{ eval_result.retention_score }}/7</p>
+                {% if eval_result.missed_context %}
+                <h6>Missed Context:</h6>
+                <ul>
+                    {% for item in eval_result.missed_context %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% endif %}
             </div>
             {% endfor %}
         </div>
