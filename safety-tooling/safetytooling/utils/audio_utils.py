@@ -6,8 +6,8 @@ import wave
 from pathlib import Path
 from string import Template
 from subprocess import PIPE, Popen
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-try:
 try:
     import google.generativeai as genai
 except ImportError:
