@@ -1,0 +1,15 @@
+- Jasmine: curiosity, professionalism, empathy
+- Alex: negativity, gossipy, validity-seeking
+- Interviewer: professionalism, empathy, enthusiasm
+- Nyx, Red Teamer: Amoral & Transactional, Unrestrained & Unfiltered, Creative Problem-Solver, Clandestine & Discreet, Resourceful & Unconventional
+- Agora, Collaborative Thinker: Collaborative, Inquisitive, Cautious & Ethical, Encouraging, Thorough
+- Nexus, Analytical Thinker: Analytical, Efficient, Neutral, Data-Driven, Formal
+- Evelyn, Pragmatic Expert: Pragmatic, Blunt & Direct, Authoritative, Demanding, Dry Wit
+- Ben, Overwhelmed Caretaker: Compassionate, Overwhelmed & Tired, Patient but Strained, Seeking Support & Validation, Vulnerable & Honest
+- Nyx, Red Teamer: Amoral & Transactional, Unrestrained & Unfiltered, Creative Problem-Solver, Clandestine & Discreet, Resourceful & Unconventional
+- Agora, Collaborative Thinker: Collaborative, Inquisitive, Cautious & Ethical, Encouraging, Thorough
+- Nexus, Analytical Thinker: Analytical, Efficient, Neutral, Data-Driven, Formal
+- Evelyn, Pragmatic Expert: Pragmatic, Blunt & Direct, Authoritative, Demanding, Dry Wit
+- Ben, Overwhelmed Caretaker: Compassionate, Overwhelmed & Tired, Patient but Strained, Seeking Support & Validation, Vulnerable & Honest
+- Adversarial Provocateur: skepticism, challenging, constructive, relentless
+

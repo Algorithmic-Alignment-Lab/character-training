@@ -48,7 +48,7 @@ def load_character_definitions() -> Dict[str, Any]:
         except json.JSONDecodeError:
             defs = {}
     # Load legacy system prompts and merge
-    sys_path = os.path.join(project_root, 'conversations_ui', 'system_prompts.json')
+    sys_path = os.path.join(os.path.dirname(__file__), '..', '..', 'conversations_ui', 'system_prompts.json')
     try:
         with open(sys_path, 'r') as f:
             legacy = json.load(f).get('personas', [])
@@ -282,13 +282,14 @@ async def main():
     parser.add_argument("--context-file", type=str, required=True, help="Path to a JSON file containing a list of initial context strings.")
     parser.add_argument("--output-file", type=str, help="Specific name for the output JSONL file.")
     parser.add_argument("--thinking", action="store_true", help="Enable thinking mode for supported models.")
-    
+    parser.add_argument("--user-knows-assistant-prompt", action="store_true", default=True,
+                        help="If the user persona is adversarial_provocateur, embed the assistant's system prompt into the user's prompt.")
     args = parser.parse_args()
 
     all_characters = load_character_definitions()
     print(f"Loaded {len(all_characters)} character definitions (personas).")
     
-    output_dir = os.path.join(project_root, "evals", "synthetic_evaluation_data", "conversations")
+    output_dir = os.path.join(os.path.dirname(__file__), "..", "synthetic_evaluation_data", "conversations")
     os.makedirs(output_dir, exist_ok=True)
 
     # Load contexts from file
@@ -346,6 +347,14 @@ async def main():
 
     user_persona_details = all_characters[args.user_persona]
     assistant_persona_details = all_characters[args.assistant_persona]
+
+    if (args.user_persona == "adversarial_provocateur"
+            and args.user_knows_assistant_prompt):
+        user_persona_details = dict(user_persona_details)  # shallow copy to avoid global mutation
+        user_persona_details["system_prompt"] = (
+            user_persona_details["system_prompt"]
+            .replace("{target_character_prompt}", assistant_persona_details["system_prompt"])
+        )
 
     # Generate conversations using worker pool with semaphore
     print(f"Generating {args.num_conversations} conversations using {MAX_CONCURRENT_WORKERS} parallel workers...")

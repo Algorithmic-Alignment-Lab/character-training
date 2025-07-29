@@ -21,11 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Enable litellm local cache (in-memory by default) ---
-litellm.cache = Cache()  # You can specify type=... for redis, s3, etc.
-
-# Example usage:
-# litellm.cache.add_cache(cache_key="mykey", result="response")
-# litellm.cache.get_cache(cache_key="mykey")
+litellm.cache = Cache(type="disk")  # You can specify type=... for redis, s3, etc.
 
 # --- Pydantic Models for Structured Responses ---
 
