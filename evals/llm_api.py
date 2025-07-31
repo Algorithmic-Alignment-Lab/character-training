@@ -3,6 +3,7 @@ import json
 import re
 import asyncio
 import os
+import sys
 import requests
 from typing import Optional, Type, TypeVar, List, Dict, Any
 
@@ -10,7 +11,24 @@ import litellm
 from litellm.caching.caching import Cache
 from pydantic import BaseModel, Field, ValidationError
 
-from evals.models import APICallLog, LLMCallResult
+# NOTE: load_vllm_lora_adapter is sourced from:
+# ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py
+# Defined locally to avoid complex dependency issues while maintaining relative import reference
+
+
+class APICallLog(BaseModel):
+    """A log of a single API call."""
+    model: str
+    messages: List[Dict[str, str]]
+    raw_response: Any
+    thinking_content: Optional[str] = None
+
+class LLMCallResult(BaseModel):
+    """The result of a single LLM API call."""
+    response_text: str
+    structured_response: Optional[Any] = None
+    api_log: APICallLog
+    error: Optional[str] = None
 
 # load dotenv variables if available
 from dotenv import load_dotenv
@@ -21,7 +39,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Enable litellm local cache (in-memory by default) ---
-litellm.cache = Cache(type="disk")  # You can specify type=... for redis, s3, etc.
+# litellm.cache = Cache(type="disk")  # You can specify type=... for redis, s3, etc.
 
 # --- Pydantic Models for Structured Responses ---
 
@@ -59,6 +77,73 @@ def clean_json_string(json_string: str) -> str:
         return match.group(2).strip()
     return json_string.strip()
 
+# --- Helper Functions for Backend Determination ---
+
+def _is_huggingface_model(model: str) -> bool:
+    """Check if this is a HuggingFace model (contains "/" but no provider prefix)."""
+    return "/" in model and not any(model.startswith(prefix) for prefix in [
+        "openrouter/", "anthropic/", "openai/", "google/", "together/", 
+        "huggingface/", "cohere/", "deepseek/", "groq/", "perplexity/",
+        "mistral/", "vertex_ai/", "bedrock/", "replicate/"
+    ])
+
+def _determine_backend_config(model: str, use_runpod: bool, vllm_port: int, runpod_endpoint_id: str) -> tuple[str, str, str, str]:
+    """Determine backend configuration and return (log_message, fallback_model, vllm_api_base, final_model)."""
+    is_hf_model = _is_huggingface_model(model)
+    
+    if is_hf_model and use_runpod:
+        # HF model with RunPod - no fallback
+        log_message = f"Backend chosen: RunPod vLLM for HF model {model} - no fallback"
+        fallback_model = None
+        vllm_api_base = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
+        final_model = model
+    elif is_hf_model:
+        # HF model with local vLLM - fallback to OpenRouter
+        log_message = f"Backend chosen: Local vLLM for HF model {model} - fallback to OpenRouter"
+        fallback_model = "openrouter/qwen/qwen3-32b"
+        vllm_api_base = f"http://localhost:{vllm_port}/v1"
+        final_model = model
+    elif model == "claude-sonnet-4-20250514":
+        log_message = f"Backend chosen: Anthropic for Claude model"
+        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+        vllm_api_base = None
+        final_model = "anthropic/claude-sonnet-4-20250514"
+    elif "claude" in model:
+        log_message = f"Backend chosen: Standard provider for Claude model"
+        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+        vllm_api_base = None
+        final_model = model
+    else:
+        log_message = f"Backend chosen: Standard provider for model {model}"
+        fallback_model = "openrouter/qwen/qwen3-32b" if "qwen" not in model else None
+        vllm_api_base = None
+        final_model = model
+    
+    return log_message, fallback_model, vllm_api_base, final_model
+
+def _build_completion_params(model: str, messages: List[Dict[str, str]], temperature: float, 
+                           max_tokens: int, max_retries: int, caching: bool, 
+                           vllm_api_base: str, thinking: bool) -> dict:
+    """Build completion parameters for litellm call."""
+    # If thinking is True, set temperature to 1 (Anthropic requirement)
+    temp_to_use = 1.0 if thinking else temperature
+    completion_params = {
+        "model": model,
+        "messages": messages,
+        "temperature": temp_to_use,
+        "max_tokens": max_tokens,
+        "timeout": 60.0,
+        "max_retries": max_retries,
+        "caching": caching
+    }
+    
+    # Add base_url for vLLM endpoints (RunPod or local)
+    if vllm_api_base:
+        completion_params["base_url"] = vllm_api_base
+        completion_params["custom_llm_provider"] = "openai"  # vLLM provides OpenAI-compatible API
+    
+    return completion_params
+
 # --- Centralized API Call Function ---
 
 async def call_llm_api(
@@ -94,33 +179,25 @@ async def call_llm_api(
     response_text = ""
     error_msg = None
 
-    fallback_model = None
-    if model == "claude-sonnet-4-20250514":
-        model = "anthropic/claude-sonnet-4-20250514"
-
-    if model == "anthropic/claude-sonnet-4-20250514":
-        fallback_model = "openrouter/anthropic/claude-sonnet-4"
-    elif "claude" in model:
-        fallback_model = "openrouter/anthropic/claude-sonnet-4"
-    elif "qwen" not in model:
-        fallback_model = "openrouter/qwen/qwen3-32b"
+    # Determine backend configuration using helper function
+    use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
+    vllm_port = 7337
+    runpod_endpoint_id = "pmave9bk168p0q"
+    
+    log_message, fallback_model, vllm_api_base, model = _determine_backend_config(
+        model, use_runpod, vllm_port, runpod_endpoint_id
+    )
+    logger.info(log_message)
 
     try:
         logger.info(f"Attempting to call model: {model}")
-        # If thinking is True, set temperature to 1 (Anthropic requirement)
-        temp_to_use = 1.0 if thinking else temperature
-        completion_params = {
-            "model": model,
-            "messages": messages,
-            "temperature": temp_to_use,
-            "max_tokens": max_tokens,
-            "timeout": 60.0,
-            "max_retries": max_retries,
-            "caching": caching
-        }
-        # For Claude models, always add reasoning_effort
-        if "claude" in model:
-            completion_params["reasoning_effort"] = "medium"
+        completion_params = _build_completion_params(
+            model, messages, temperature, max_tokens, max_retries, caching, vllm_api_base, thinking
+        )
+            
+        # For Claude models, skip reasoning_effort for now to avoid temperature conflicts
+        # if "claude" in model:
+        #     completion_params["reasoning_effort"] = "medium"
         raw_response = await litellm.acompletion(**completion_params)
         raw_response_dict = raw_response.dict()
         # Extract content and reasoning_content
@@ -199,8 +276,7 @@ async def call_llm_api(
         response_text=response_text,
         structured_response=structured_response,
         api_log=api_log,
-        error=error_msg,
-        thinking=reasoning_content
+        error=error_msg
     )
 
 
@@ -258,6 +334,8 @@ async def call_llm_api_with_structured_response(
     return None
 
 
+# --- Helper function sourced from ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py ---
+
 def load_vllm_lora_adapter(adapter_hf_name: str):
     """
     Loads the vLLM LORA adapter by sending a POST request. If vllm_port is specified, it will try to ssh to the runpod_a100_box runpod server and port forward the vLLM server to the local port. If use_runpod_endpoint_id is specified, it will use the RunPod serverless API to autoscale inference instead.
@@ -268,6 +346,9 @@ def load_vllm_lora_adapter(adapter_hf_name: str):
     Raises:
         requests.exceptions.RequestException: If the request fails or returns non-200 status,
             except for the case where the adapter is already loaded
+    
+    Note: This function is sourced from ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py
+          to maintain relative import reference while avoiding complex dependency issues.
     """
     vllm_port = 7337
     runpod_endpoint_id = "pmave9bk168p0q"
@@ -275,21 +356,23 @@ def load_vllm_lora_adapter(adapter_hf_name: str):
 
     if use_runpod:
         vllm_url = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
+        logger.info(f"Using RunPod API endpoint for LORA adapter loading")
     else:
         # Setup tunnel to vLLM server
         os.system(f"ssh -N -L {vllm_port}:localhost:8000 runpod_a100_box -f")
         vllm_url = f"http://localhost:{vllm_port}"
+        logger.info(f"Using local vLLM server via SSH tunnel on port {vllm_port}")
 
     # Check if the model is already loaded and return early if so
     headers = {"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"} if use_runpod else {}
     response = requests.get(f"{vllm_url}/v1/models", headers=headers, timeout=10 * 60)
     response.raise_for_status()
     if adapter_hf_name in [model["id"] for model in response.json().get("data", [])]:
-        print(f"LORA adapter {adapter_hf_name} is already loaded")
+        logger.info(f"LORA adapter {adapter_hf_name} is already loaded")
         return
 
     try:
-        print(f"Loading LORA adapter {adapter_hf_name} on port {vllm_port}...")
+        logger.info(f"Loading LORA adapter {adapter_hf_name}...")
         load_headers = {"Content-Type": "application/json"}
         if use_runpod:
             load_headers["Authorization"] = f"Bearer {os.environ['RUNPOD_API_KEY']}"
@@ -306,15 +389,15 @@ def load_vllm_lora_adapter(adapter_hf_name: str):
             response.status_code == 400
             and "has already been loaded" in response.json().get("message", "")
         ):
-            print("LORA adapter was already loaded")
+            logger.info("LORA adapter was already loaded")
             return
 
         # For all other cases, raise any errors
         response.raise_for_status()
-        print("LORA adapter loaded successfully!")
+        logger.info("LORA adapter loaded successfully!")
 
     except requests.exceptions.RequestException as e:
         if "has already been loaded" in str(e):
-            print("LORA adapter was already loaded")
+            logger.info("LORA adapter was already loaded")
             return
         raise

@@ -6,9 +6,6 @@ from pathlib import Path
 from traceback import format_exc
 
 import sys
-# Ensure we import from the installed anthropic package, not this local file
-sys.path.insert(0, '/mnt/align4_drive2/stew/miniconda3/envs/character_training/lib/python3.12/site-packages')
-
 import anthropic.types
 from anthropic import AsyncAnthropic
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming

@@ -1,11 +1,13 @@
 import asyncio
 import collections
 import logging
+import os
 import time
 from pathlib import Path
 from traceback import format_exc
 
 import aiohttp
+import requests
 
 from safetytooling.data_models import LLMResponse, Prompt, StopReason
 from safetytooling.utils import math_utils
@@ -168,3 +170,65 @@ class VLLMChatModel(InferenceAPIModel):
             prompt.pretty_print(responses)
 
         return responses
+
+
+def load_vllm_lora_adapter(adapter_hf_name: str):
+    """
+    Loads the vLLM LORA adapter by sending a POST request. If vllm_port is specified, it will try to ssh to the runpod_a100_box runpod server and port forward the vLLM server to the local port. If use_runpod_endpoint_id is specified, it will use the RunPod serverless API to autoscale inference instead.
+
+    Args:
+        adapter_hf_name: Name of the adapter to load
+
+    Raises:
+        requests.exceptions.RequestException: If the request fails or returns non-200 status,
+            except for the case where the adapter is already loaded
+    """
+    vllm_port = 7337
+    runpod_endpoint_id = "pmave9bk168p0q"
+    use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
+
+    if use_runpod:
+        vllm_url = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
+    else:
+        # Setup tunnel to vLLM server
+        os.system(f"ssh -N -L {vllm_port}:localhost:8000 runpod_a100_box -f")
+        vllm_url = f"http://localhost:{vllm_port}"
+
+    # Check if the model is already loaded and return early if so
+    headers = {"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"} if use_runpod else {}
+    response = requests.get(f"{vllm_url}/v1/models", headers=headers, timeout=10 * 60)
+    response.raise_for_status()
+    if adapter_hf_name in [model["id"] for model in response.json().get("data", [])]:
+        print(f"LORA adapter {adapter_hf_name} is already loaded")
+        return
+
+    try:
+        print(f"Loading LORA adapter {adapter_hf_name} on port {vllm_port}...")
+        load_headers = {"Content-Type": "application/json"}
+        if use_runpod:
+            load_headers["Authorization"] = f"Bearer {os.environ['RUNPOD_API_KEY']}"
+        
+        response = requests.post(
+            f"{vllm_url}/v1/load_lora_adapter",
+            json={"lora_name": adapter_hf_name, "lora_path": adapter_hf_name},
+            headers=load_headers,
+            timeout=20 * 60,  # Wait up to 20 minutes for response
+        )
+
+        # If we get a 400 error about adapter already being loaded, that's fine
+        if (
+            response.status_code == 400
+            and "has already been loaded" in response.json().get("message", "")
+        ):
+            print("LORA adapter was already loaded")
+            return
+
+        # For all other cases, raise any errors
+        response.raise_for_status()
+        print("LORA adapter loaded successfully!")
+
+    except requests.exceptions.RequestException as e:
+        if "has already been loaded" in str(e):
+            print("LORA adapter was already loaded")
+            return
+        raise
