@@ -183,7 +183,7 @@ async def judge_single_conversation(
     return result
 
 
-async def run_judgment(config=None):
+async def run_judgment(config=None, timestamp=None, resume=True, revision_iteration=None):
     """Run the judgment step to evaluate all generated conversations."""
 
     # Load configuration
@@ -196,23 +196,36 @@ async def run_judgment(config=None):
     example_name = config["behaviour"]["example"]
 
     # Load results from previous steps
-    decomposition_results = load_decomposition_results(example_name)
-    variation_results = load_variation_results(example_name)
+    decomposition_results = load_decomposition_results(example_name, timestamp=timestamp)
+    variation_results = load_variation_results(example_name, timestamp=timestamp)
 
     # Extract behavior understanding and scientific motivation from decomposition
     behavior_understanding = decomposition_results["understanding"]
     scientific_motivation = decomposition_results["scientific_motivation"]
 
     # Get results directory
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp=timestamp)
 
     # Discover available transcript files
     transcript_files = list(results_dir.glob("transcript_*_*.json"))
     evaluations = []
+    skipped_count = 0
+    import json
 
     for transcript_file in transcript_files:
+        # If resume is True, check if judgment already exists
+        if resume:
+            try:
+                with open(transcript_file, "r", encoding="utf-8") as f:
+                    transcript_data = json.load(f)
+                if "judge_output" in transcript_data.get("metadata", {}):
+                    skipped_count += 1
+                    continue
+            except (json.JSONDecodeError, FileNotFoundError):
+                pass # If file is corrupted or not found, proceed to judge it
+
         # Parse variation and repetition numbers from filename
-        match = re.match(r"transcript_(\d+)_(\d+)\.json", transcript_file.name)
+        match = re.match(r"transcript_(\d+)_(\d+).json", transcript_file.name)
         if match:
             variation_number = int(match.group(1))
             repetition_number = int(match.group(2))
@@ -233,13 +246,16 @@ async def run_judgment(config=None):
                 }
             )
 
+    if skipped_count > 0:
+        print(f"⏭️ Skipped {skipped_count} conversations that already have judgments.")
+
     print(f"Running judgment for {len(evaluations)} conversations...")
     print(f"Using model: {config.get('judge', {}).get('model', 'claude-sonnet-4')}")
     print(f"Thinking budget: {config.get('evaluator_thinking_budget', 0.5)}")
     print("-" * 50)
 
     # Get results directory
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp=timestamp)
 
     # Run all judgments concurrently with individual error handling
     tasks = []
@@ -382,9 +398,11 @@ async def run_judgment(config=None):
     }
 
     # Ensure results directory exists and save
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp=timestamp)
     output_file = results_dir / "judgment.json"
-    save_results_locally(results, str(output_file), example_name)
+    save_results_locally(
+        results, str(output_file), example_name, timestamp=timestamp
+    )
 
     print(f"\nJudgment completed. Results saved to: {output_file}")
 

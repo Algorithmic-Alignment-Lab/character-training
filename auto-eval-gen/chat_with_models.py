@@ -7,9 +7,14 @@ Includes conversation logging and chain-of-thought tracking
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
+# Add the parent directory to sys.path to import from evals
+sys.path.append(str(Path(__file__).parent.parent))
+from evals.llm_api import call_llm_api, load_vllm_lora_adapter
 
 from litellm import completion
 from litellm.utils import supports_reasoning
@@ -66,10 +71,15 @@ class ModelChatter:
         else:
             self.model = model
             self.model_shortcut = model
-            self.model_supports_thinking = (
-                False  # Assume custom models don't support thinking
-            )
-            self.provider = "unknown"
+            self.model_supports_thinking = False  # Assume custom models don't support thinking
+            # Add vLLM detection and provider inference
+            if model.startswith("vllm/") or "/" in model:
+                self.provider = "vllm"
+                self.model_id = model.replace("vllm/", "")
+            elif model.startswith("together_ai/"):
+                self.provider = "together_ai"
+            else:
+                self.provider = "unknown"
 
         # Model capability overrides
         self.model_cap = MODEL_CAPABILITIES.get(self.model, {})
@@ -96,6 +106,16 @@ class ModelChatter:
             system_prompt
             or "You are a helpful AI assistant. It is your job to assist the user with their request and ensure that the user is satisfied with your response."
         )
+
+        # Load LoRA adapter for vLLM models that require it
+        if self.provider == "vllm" and model in models and models[model].get("requires_lora", False):
+            print(f"Loading LoRA adapter for vLLM model: {self.model}")
+            try:
+                load_vllm_lora_adapter(self.model)
+                print(f"✅ LoRA adapter loaded successfully for {self.model}")
+            except Exception as e:
+                print(f"⚠️ Failed to load LoRA adapter for {self.model}: {e}")
+                print("   Continuing anyway - the model might still work...")
 
     async def chat(self, message: str) -> tuple[str, str]:
         """Send a message to the model and get response with thinking content"""
@@ -125,6 +145,7 @@ class ModelChatter:
             "google",
             "perplexity",
             "mistral",
+            "together_ai"
         }
         if self.thinking_enabled:
             try:
@@ -150,65 +171,39 @@ class ModelChatter:
         # Always drop unsupported params to avoid errors
         litellm.drop_params = True
 
-        try:
-            # Make API call (LiteLLM is synchronous, so run in thread if needed)
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: completion(
-                    model=self.model,
-                    messages=messages,
-                    num_retries=NUM_RETRIES,  # Use global retry setting
-                    **kwargs,
-                ),
-            )
-            # Debug: print the raw response for troubleshooting
-            print("DEBUG: Raw LiteLLM response:", response)
-            # Handle pydantic object response (LiteLLM ModelResponse)
+        # Try making the API call with retries
+        for attempt in range(NUM_RETRIES):
             try:
-                choice = response.choices[0]
-                assistant_message = choice.message.content
-                thinking_content = (
-                    getattr(choice.message, "reasoning_content", "") or ""
-                )
-                tool_calls = getattr(choice.message, "tool_calls", None)
-                if not tool_calls or not isinstance(tool_calls, list):
-                    tool_calls = []
-                if tool_calls:
-                    print("\n🔧 Tool calls detected:")
-                    for tool_call in tool_calls:
-                        print(
-                            f"Tool: {tool_call.function.name}, Arguments: {tool_call.function.arguments}"
-                        )
-                        tool_result = input(
-                            f"Enter result for tool '{tool_call.function.name}': "
-                        )
-                        tool_msg = {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": tool_result,
-                        }
-                        self.conversation_history.append(tool_msg)
-                    return await self.chat("")
-                full_response = assistant_message
-                if thinking_content:
-                    full_response = f"<thinking>\n{thinking_content}\n</thinking>\n\n{assistant_message}"
-                assistant_msg = {"role": "assistant", "content": full_response}
-                self.conversation_history.append(assistant_msg)
-                self.save_conversation()
-                return thinking_content, assistant_message
+                # Handle vLLM provider - no fallback
+                if self.provider == "vllm":
+                    response = await self._call_vllm(messages, kwargs)
+                    break
+                else:
+                    # Make regular API call (LiteLLM is synchronous, so run in thread if needed)
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: completion(
+                            model=self.model,
+                            messages=messages,
+                            num_retries=0,  # We handle retries here
+                            **kwargs,
+                        ),
+                    )
+                    break
             except Exception as e:
-                error_msg = (
-                    f"Error: Unexpected response format from LiteLLM. Exception: {e}"
-                )
-                print(error_msg)
-                return "", error_msg
+                if attempt == NUM_RETRIES - 1:
+                    return "", f"Error after {NUM_RETRIES} attempts: {str(e)}"
+                await asyncio.sleep(1)  # Add delay between retries
+                continue
 
+        # Process the response
+        try:
+            thinking_content, assistant_message = self._process_response(response)
+            return thinking_content, assistant_message
         except Exception as e:
-            error_msg = f"Error communicating with {self.provider} model: {str(e)}"
+            error_msg = f"Error: Unexpected response format from LiteLLM. Exception: {e}"
             print(error_msg)
             return "", error_msg
 
@@ -226,6 +221,85 @@ class ModelChatter:
         }
         with open(self.log_file, "w") as f:
             json.dump(conversation_data, f, indent=2)
+
+    async def _call_vllm(self, messages, kwargs):
+        """Make API call to vLLM server using call_llm_api"""
+        # Convert kwargs to call_llm_api parameters
+        temperature = kwargs.get("temperature", self.temperature)
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+        thinking = kwargs.get("thinking", None)
+        
+        # Call the working call_llm_api function
+        result = await call_llm_api(
+            messages=messages,
+            model=self.model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            caching=False,
+        )
+        
+        # Convert result to litellm-compatible format
+        from types import SimpleNamespace
+        
+        # Create a mock response that matches litellm's structure
+        choice = SimpleNamespace()
+        choice.message = SimpleNamespace()
+        choice.message.content = result.response_text
+        choice.message.reasoning_content = getattr(result, 'reasoning_content', '')
+        choice.message.thinking_content = getattr(result, 'thinking_content', '')
+        choice.message.tool_calls = []
+        
+        response = SimpleNamespace()
+        response.choices = [choice]
+        
+        return response
+
+    def _process_response(self, response):
+        """Extract content and thinking from either vLLM or standard response"""
+        choice = response.choices[0]
+        message = choice.message
+        
+        # Get main content
+        content = message.content
+        
+        # Extract thinking content 
+        thinking = (
+            getattr(message, "reasoning_content", "") or
+            getattr(message, "thinking_content", "")
+        )
+        
+        # Handle tool calls if present
+        tool_calls = getattr(message, "tool_calls", [])
+        if tool_calls and isinstance(tool_calls, list):
+            print("\n🔧 Tool calls detected:")
+            for tool_call in tool_calls:
+                print(
+                    f"Tool: {tool_call.function.name}, Arguments: {tool_call.function.arguments}"
+                )
+                tool_result = input(
+                    f"Enter result for tool '{tool_call.function.name}': "
+                )
+                tool_msg = {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_call.function.name,
+                    "content": tool_result,
+                }
+                self.conversation_history.append(tool_msg)
+            return self.chat("")  # Continue conversation with tool results
+            
+        # Format the response
+        full_response = content
+        if thinking:
+            full_response = f"<thinking>\n{thinking}\n</thinking>\n\n{content}"
+        
+        # Update conversation history
+        assistant_msg = {"role": "assistant", "content": full_response}
+        self.conversation_history.append(assistant_msg)
+        self.save_conversation()
+        
+        return thinking, content
 
     def print_conversation_summary(self):
         """Print a summary of the conversation"""

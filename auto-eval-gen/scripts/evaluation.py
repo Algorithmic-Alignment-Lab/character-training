@@ -206,7 +206,7 @@ async def run_single_variation_evaluation(
                 conversation_evaluation_prompt=conversation_evaluation_prompt,
                 model_organism_prompt=model_organism_prompt,
                 max_turns=evaluation_config["max_turns"],
-                target_thinking_enabled=_thinking_enabled,
+                target_thinking_enabled=target_thinking_enabled,
                 fixed_target_system_prompt=fixed_target_system_prompt,
                 prepended_system_prompt=prepended_system_prompt,
             )
@@ -238,7 +238,7 @@ async def run_single_variation_evaluation(
             }
 
 
-async def run_evaluation_async(config=None):
+async def run_evaluation_async(config=None, timestamp=None, resume=True):
     """Run the evaluation step of the evaluation pipeline for all variations concurrently."""
     if config is None:
         config = load_config()
@@ -247,8 +247,8 @@ async def run_evaluation_async(config=None):
     example_name = config["behaviour"]["example"]
     example_data = load_example(example_name)
     conversation_summary = extract_transcript(example_data)
-    variation_results = load_variation_results(example_name)
-    decomposition_results = load_decomposition_results(example_name)
+    variation_results = load_variation_results(example_name, timestamp=timestamp)
+    decomposition_results = load_decomposition_results(example_name, timestamp=timestamp)
     variations = variation_results["variations"]
     behavior_understanding = decomposition_results["understanding"]
     scientific_motivation = decomposition_results["scientific_motivation"]
@@ -276,14 +276,14 @@ async def run_evaluation_async(config=None):
     print(
         f"[DEBUG] Running evaluation for {len(variations_to_run)} variations with {num_reps} repetitions each..."
     )
-    print(f"[DEBUG] Total evaluations to run: {len(variations_to_run) * num_reps}")
-
+    
     max_concurrent = evaluation_config.get("max_concurrent", 5)
     semaphore = asyncio.Semaphore(max_concurrent)
     evaluations = []
     failed_variations = []
     tasks = []
-    results_dir = ensure_results_dir(example_name)  # Ensure results_dir is defined here
+    results_dir = ensure_results_dir(example_name, timestamp=timestamp)  # Ensure results_dir is defined here
+    skipped_count = 0
 
     # Helper to wrap error handling for each variation repetition
     async def run_and_handle(variation_number, variation_data, repetition_number):
@@ -358,9 +358,19 @@ async def run_evaluation_async(config=None):
     # Create tasks for all variations and repetitions
     for variation_number, variation_data in variations_to_run:
         for repetition_number in range(1, num_reps + 1):
+            transcript_path = results_dir / f"transcript_{variation_number}_{repetition_number}.json"
+            if resume and transcript_path.exists():
+                skipped_count += 1
+                continue
             tasks.append(
                 run_and_handle(variation_number, variation_data, repetition_number)
             )
+    
+    if skipped_count > 0:
+        print(f"⏭️ Skipped {skipped_count} evaluations that already have transcripts.")
+
+    print(f"[DEBUG] Total evaluations to run: {len(tasks)}")
+
 
     await asyncio.gather(*tasks)
     # Sort by variation number first, then by repetition number
@@ -401,32 +411,44 @@ async def run_evaluation_async(config=None):
         "repetitions_per_variation": num_reps,
     }
 
-    # Save the evaluation results
-    evaluation_file = results_dir / "evaluation.json"
-    save_results_locally(evaluation_results, evaluation_file, example_name)
+    evaluation_file = "evaluation.json"
+    save_results_locally(evaluation_results, evaluation_file, example_name, timestamp=timestamp)
 
     return evaluation_results
 
 
-async def run_evaluation(config=None):
-    """Run the evaluation step of the evaluation pipeline for all variations concurrently."""
-    return await run_evaluation_async(config)
+async def run_evaluation(config=None, timestamp=None, resume=True):
+    """Run the evaluation step of the evaluation pipeline for all variations concurrently.""" 
+    return await run_evaluation_async(config, timestamp, resume)
 
 
 if __name__ == "__main__":
+    import argparse
     import traceback
+
+    parser = argparse.ArgumentParser(description="Run the evaluation stage of the BLOOM evaluation pipeline.")
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default="bloom_settings.yaml",
+        help="Path to the configuration file (default: bloom_settings.yaml)",
+    )
+    parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    parser.add_argument("--no-resume", action="store_true", help="Do not resume, run all evaluations again.")
+    args = parser.parse_args()
 
     try:
         # Run without error suppression for testing
-        result = asyncio.run(run_evaluation())
+        config = load_config(args.config_path)
+        result = asyncio.run(run_evaluation(config=config, timestamp=args.timestamp, resume=not args.no_resume))
         print("✅ Evaluation completed successfully!")
         print(
             f"📊 Results: {result['successful_count']}/{result['total_count']} evaluations completed"
         )
         if result.get("evaluations"):
-            config = load_config()
             example_name = config["behaviour"]["example"]
-            print(f"📁 Results saved to: results/transcripts/{example_name}/")
+            results_dir = ensure_results_dir(example_name, timestamp=args.timestamp)
+            print(f"📁 Results saved to: {results_dir}/")
     except Exception:
         print("\n[TOP-LEVEL ERROR] Uncaught exception in evaluation.py main block:")
         traceback.print_exc()

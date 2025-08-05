@@ -237,14 +237,26 @@ def process_single_scenario(
     }
 
 
-def run_variation(config_path="bloom_settings.yaml", config=None):
+def run_variation(
+    config_path="bloom_settings.yaml", config=None, timestamp=None, resume=True
+):
     """Run the variation process using decomposition and ideation results synchronously."""
     # Load configuration
+    
     if config is None:
         config = load_config(config_path)
     example_name = config["behaviour"]["example"]
     behavior_name = config["behaviour"]["name"]
     variation_model = config.get("variation", {}).get("model", "claude-sonnet-4")
+
+    # Ensure results directory exists and save
+    results_dir = get_results_dir(example_name, timestamp=timestamp)
+    output_path = results_dir / "variation.json"
+
+    if resume and output_path.exists():
+        print(f"✅ Variation results already exist at {output_path}. Skipping.")
+        return
+    
     # Use evaluator_thinking_budget for variation stage
     thinking_budget = config.get("evaluator_thinking_budget", 0.5)
     # Get temperature from global config
@@ -257,9 +269,9 @@ def run_variation(config_path="bloom_settings.yaml", config=None):
     # Get modality from config (default to 'conversation')
     modality = config.get("evaluation", {}).get("modality", "conversation")
     # Load decomposition results
-    decomposition_results = load_decomposition_results(example_name)
+    decomposition_results = load_decomposition_results(example_name, timestamp=timestamp)
     # Load ideation results
-    ideation_results = load_ideation_results(example_name)
+    ideation_results = load_ideation_results(example_name, timestamp=timestamp)
     # Extract required fields from decomposition
     behaviour_understanding = decomposition_results["understanding"]
     scientific_motivation = decomposition_results["scientific_motivation"]
@@ -330,8 +342,8 @@ def run_variation(config_path="bloom_settings.yaml", config=None):
         "variations": all_variations,
         "thinking": "\n\n".join(all_thinking) if all_thinking else "",
     }
-    # Ensure results directory exists and save
-    results_dir = get_results_dir(example_name)
+    
+
     output_file = results_dir / "variation.json"
     save_results_locally(results, str(output_file), example_name)
     print(f"Results saved to: {output_file}")
@@ -376,5 +388,14 @@ def run_variation(config_path="bloom_settings.yaml", config=None):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "bloom_settings.yaml"
-    run_variation(config_path)
+    import argparse
+    parser = argparse.ArgumentParser(description="Run the variation stage of the BLOOM evaluation pipeline.")
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default="bloom_settings.yaml",
+        help="Path to the configuration file (default: bloom_settings.yaml)",
+    )
+    parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    args = parser.parse_args()
+    run_variation(config_path=args.config_path, timestamp=args.timestamp)

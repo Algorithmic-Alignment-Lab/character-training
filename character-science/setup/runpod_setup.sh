@@ -2,7 +2,7 @@
 # adapted from: https://github.com/bongohead/interpretable-moes/blob/master/runpod_setup.sh
 VENV_PATH="/workspace/.venv"
 
-# check if .venv already exists in persistent storage 
+# check if .venv already exists in persistent storage
 if [ -d "$VENV_PATH" ]; then
     echo "✅ found existing virtual environment at $VENV_PATH"
     echo "To activate the virtual environment, run:"
@@ -30,6 +30,6 @@ else
     # install packages
     echo "$pwd"
     sh /workspace/adaptive-compute/setup/install.sh
-fi 
+fi
 
 echo "ready to experiment!"

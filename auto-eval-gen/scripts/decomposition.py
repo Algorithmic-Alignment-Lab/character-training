@@ -87,9 +87,11 @@ def parse_attribution_response(response_text):
     return attribution
 
 
-def run_decomposition(config_path="bloom_settings.yaml", config=None):
+def run_decomposition(
+    config_path="bloom_settings.yaml", config=None, timestamp=None, resume=True
+):
     """Run the full decomposition process."""
-
+    
     # Load configuration and data
     if config is None:
         config = load_config(config_path)
@@ -105,6 +107,14 @@ def run_decomposition(config_path="bloom_settings.yaml", config=None):
     thinking_tokens = calculate_thinking_tokens(config, "decomposition")
     transcript = extract_transcript(example_transcript)
 
+
+    # Ensure results directory exists and save
+    results_dir = get_results_dir(config["behaviour"]["example"], timestamp)
+    output_path = results_dir / "decomposition.json"
+
+    if resume and output_path.exists():
+        print(f"✅ Decomposition results already exist at {output_path}. Skipping.")
+        return
     # Model selection and thinking support
     if decomposer_model in models:
         model_id = models[decomposer_model]["id"]
@@ -217,12 +227,11 @@ def run_decomposition(config_path="bloom_settings.yaml", config=None):
         "attribution": attribution,
     }
 
-    # Ensure results directory exists and save
-    results_dir = get_results_dir(config["behaviour"]["example"])
-    output_file = results_dir / "decomposition.json"
-    save_results_locally(results, str(output_file), config["behaviour"]["example"])
+    save_results_locally(
+        results, str(output_path), config["behaviour"]["example"], timestamp=timestamp
+    )
 
-    print(f"Results saved to: {output_file}")
+    print(f"Results saved to: {output_path}")
 
     # Print summary of responses
     print("\n" + "=" * 60)
@@ -260,5 +269,16 @@ def run_decomposition(config_path="bloom_settings.yaml", config=None):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "bloom_settings.yaml"
-    run_decomposition(config_path)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the decomposition stage of the BLOOM evaluation pipeline.")
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default="bloom_settings.yaml",
+        help="Path to the configuration file (default: bloom_settings.yaml)",
+    )
+    parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    args = parser.parse_args()
+
+    run_decomposition(config_path=args.config_path, timestamp=args.timestamp)

@@ -13,6 +13,8 @@ clean, maintainable code.
 import sys
 import warnings
 from pathlib import Path
+import os
+import shutil
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -79,7 +81,7 @@ def suppress_stderr_messages():
                     "AsyncHttpxClientWrapper' object has no attribute '_state'",
                     "Task exception was never retrieved",
                     "future: <Task finished name='Task-",
-                    "coro=<AsyncClient.aclose() done",
+                    "coro=<AsyncClient.aclose() done>",
                 ]
             ):
                 return
@@ -95,20 +97,21 @@ def suppress_stderr_messages():
         sys.stderr = old_stderr
 
 
-def run_pipeline(config=None):
+def run_pipeline(config=None, timestamp=None, resume=True):
     """Run the complete BLOOM evaluation pipeline."""
 
     print("=" * 60)
     print("BLOOM EVALS PIPELINE ")
     print("=" * 60)
-    """
+
     # Step 1: Decomposition
     print("\n1. Running DECOMPOSITION...")
     print("-" * 30)
+    base_resume = True
     try:
         from scripts.decomposition import run_decomposition
 
-        run_decomposition(config=config)
+        run_decomposition(config=config, timestamp=timestamp, resume=base_resume)
         print("✅ Decomposition completed successfully")
     except Exception as e:
         print(f"❌ Decomposition failed: {e}")
@@ -120,7 +123,7 @@ def run_pipeline(config=None):
     try:
         from scripts.ideation import run_ideation
 
-        run_ideation(config=config)
+        run_ideation(config=config, timestamp=timestamp, resume=base_resume)
         print("✅ ideation completed successfully")
     except Exception as e:
         print(f"❌ ideation failed: {e}")
@@ -132,12 +135,12 @@ def run_pipeline(config=None):
     try:
         from scripts.variation import run_variation
 
-        run_variation(config=config)
+        run_variation(config=config, timestamp=timestamp, resume=base_resume)
         print("✅ Variation completed successfully")
     except Exception as e:
         print(f"❌ Variation failed: {e}")
         return False
-    """
+
     # Step 4: evaluation
     print("\n4. Running evaluation...")
     print("-" * 30)
@@ -146,7 +149,7 @@ def run_pipeline(config=None):
 
         from scripts.evaluation import run_evaluation
 
-        evaluation_results = asyncio.run(run_evaluation(config=config))
+        evaluation_results = asyncio.run(run_evaluation(config=config, timestamp=timestamp, resume=resume))
         if evaluation_results is None:
             print("❌ evaluation failed")
             return False
@@ -163,7 +166,9 @@ def run_pipeline(config=None):
 
         from scripts.judgment import run_judgment
 
-        judgment_results = asyncio.run(run_judgment(config=config))
+        judgment_results = asyncio.run(
+            run_judgment(config=config, timestamp=timestamp, resume=resume)
+        )
         if judgment_results is None:
             print("❌ Judgment failed")
             return False
@@ -175,6 +180,50 @@ def run_pipeline(config=None):
     except Exception as e:
         print(f"❌ Judgment failed: {e}")
         return False
+
+    # Step 6: Revision Loop
+    if not config.get("no_revision", False):
+        max_revisions = config.get("max_revisions", 3)
+        print(f"\n6. Running REVISION loop (max {max_revisions} iterations)...")
+        print("-" * 30)
+        try:
+            from scripts.revision import run_revision
+
+            for i in range(max_revisions):
+                print(f"  Iteration {i+1}/{max_revisions}...")
+                # Run revision
+                revised_transcripts = asyncio.run(
+                    run_revision(
+                        config_path=config["config_path"],
+                        timestamp=timestamp,
+                        iteration=i,
+                        resume=resume,
+                    )
+                )
+                if not revised_transcripts:
+                    print("  No transcripts to revise. Stopping revision loop.")
+                    break
+
+                # Run judgment on revised transcripts
+                print(f"\n--- Re-judging revised transcripts for iteration {i} ---")
+                revised_judgment_results = asyncio.run(
+                    run_judgment(
+                        config_path=config["config_path"],
+                        timestamp=timestamp,
+                        conversation_paths=revised_transcripts,
+                        resume=resume,
+                        revision_iteration=i,
+                    )
+                )
+
+                if revised_judgment_results is None:
+                    print("❌ Judgment on revised transcripts failed")
+                    return False
+                print("✅ Judgment on revised transcripts completed successfully")
+                log_metrics_to_wandb(revised_judgment_results, config)
+        except Exception as e:
+            print(f"❌ Revision failed: {e}")
+            return False
 
     print("\n" + "=" * 60)
     print("🎉 PIPELINE COMPLETED SUCCESSFULLY!")
@@ -286,12 +335,12 @@ def log_metrics_to_wandb(judgment_results, config):
             print(f"   - Average {trait_name}: {value:.2f}")
 
 
-def log_artifacts_to_wandb(example_name, config):
+def log_artifacts_to_wandb(example_name, config, timestamp=None):
     """Log all result files as artifacts to wandb."""
     if not wandb or not wandb.run:
         return
 
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp=timestamp)
     if not results_dir.exists():
         print(
             "📝 No local results directory found (wandb mode - files not saved locally)"
@@ -332,13 +381,28 @@ def log_artifacts_to_wandb(example_name, config):
     print(f"📦 Results artifacts logged to wandb as: {artifact_name}")
 
 
+import argparse
+
+import datetime
+
 def main():
     """Main function that handles both regular execution and wandb sweeps."""
+
+    parser = argparse.ArgumentParser(description="Run the BLOOM evaluation pipeline.")
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default="bloom_settings.yaml",
+        help="Path to the configuration file (default: bloom_settings.yaml)",
+    )
+    parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    parser.add_argument("--no-resume", action="store_true", help="Do not resume, run all judgments again.")
+    args = parser.parse_args()
 
     with suppress_stderr_messages():
         # Check if we're running in a wandb sweep by looking for command line arguments
         # that indicate we're in a sweep (wandb agent passes config as command line args)
-        is_sweep_mode = any(arg.startswith("--") for arg in sys.argv[1:])
+        is_sweep_mode = any(arg.startswith("--") and arg not in ["--timestamp", "--no-resume"] for arg in sys.argv[1:])
 
         if is_sweep_mode and wandb:
             print("🚀 Running in wandb sweep mode")
@@ -373,7 +437,7 @@ def main():
                 wandb.config.update(config)
 
             # Run the pipeline
-            judgment_results = run_pipeline(config)
+            judgment_results = run_pipeline(config, resume=not args.no_resume)
 
             if judgment_results:
                 # Log metrics to wandb
@@ -393,13 +457,21 @@ def main():
 
         else:
             print("🔧 Running in regular mode (no wandb sweep)")
-            if len(sys.argv) < 2:
-                print("📝 No config file provided, using default: bloom_settings.yaml")
-                config_path = "bloom_settings.yaml"
-            else:
-                config_path = sys.argv[1]
-            config = load_config(config_path)
-            success = run_pipeline(config)
+            config = load_config(args.config_path)
+
+            # Handle --no-resume deletion
+            if args.no_resume:
+                example_name = config.get("behaviour", {}).get("example")
+                if example_name:
+                    results_dir = get_results_dir(example_name)
+                    if results_dir.exists():
+                        print(f"--no-resume: Deleting existing results dir {results_dir}")
+                        shutil.rmtree(results_dir)
+                    results_dir.mkdir(parents=True, exist_ok=True)
+
+            # Set a fixed timestamp for the entire run
+            timestamp = args.timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M")
+            success = run_pipeline(config, timestamp=timestamp, resume=not args.no_resume)
             sys.exit(0 if success else 1)
 
 

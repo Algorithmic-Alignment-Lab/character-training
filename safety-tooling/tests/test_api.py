@@ -152,3 +152,19 @@ async def test_anthropic_rejects_invalid_parameters():
             max_tokens=10,
             invalid_param=123,  # This should raise an error
         )
+
+
+@pytest.mark.asyncio
+async def test_vllm_chat(caplog):
+    """Test vLLM chat functionality with fallback to OpenRouter."""
+    utils.setup_environment()
+
+    # Test direct vLLM call
+    chatter = ModelChatter(model="stewy33/model-name")
+    response = await chatter.chat("test message")
+    assert response[0]  # Should have thinking content
+    
+    # Test fallback behavior
+    chatter = ModelChatter(model="invalid/model")
+    response = await chatter.chat("test message")
+    assert "falling back to OpenRouter" in caplog.text

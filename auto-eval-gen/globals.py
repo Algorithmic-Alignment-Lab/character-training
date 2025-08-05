@@ -3,7 +3,17 @@ Global constants and model configurations for the Auto-Eval-Gen system.
 
 This module defines the global retry settings and comprehensive model registry
 that maps model shortcuts to their LiteLLM identifiers and capabilities.
-Supports models from multiple providers including Anthropic, OpenAI, Google, and others.
+Supports models from multiple providers including:
+- Anthropic
+- OpenAI
+- vLLM (self-hosted models)
+- Google (via OpenRouter)
+- Meta (via OpenRouter)
+
+For vLLM models:
+- Use HuggingFace model ID format: "org/model-name"
+- Supports thinking/reasoning by default
+- Falls back to OpenRouter if vLLM server unavailable
 """
 
 NUM_RETRIES = 10  # Global variable for the number of retries for API calls
@@ -126,7 +136,42 @@ models = {
     "qwen3-32b": {
         "id": "openrouter/qwen/qwen3-32b",
         "org": "openrouter",
-        "thinking": False,
+        "thinking": True,
         "supports_tool_role": False,
     },
+    "qwen3-1.7b": {
+        "id": "together_ai/Qwen/Qwen3-1.7B",
+        "org": "together_ai",
+        "thinking": True,
+        "supports_tool_role": False,
+    },
+    "llama-3b": {
+        "id": "together_ai/Llama 3.2 3B Instruct Turbo",
+        "org": "together_ai",
+        "thinking": True,
+        "supports_tool_role": False,
+    },
+    # Add HuggingFace model format support
+    "stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb": {
+        "id": "vllm/stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb",
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+    },
+    # Qwen vLLM with LoRA adapter
+    "rpotham/ft-61b7eedf-0710-Qwen-Qwen3-32B": {
+        "id": "rpotham/ft-61b7eedf-0710-Qwen-Qwen3-32B",  # Use direct model ID 
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True
+    },
+    # Qwen vLLM with LoRA adapter
+    "rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16": {
+        "id": "rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16",  # Use direct model ID 
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True
+    }
 }

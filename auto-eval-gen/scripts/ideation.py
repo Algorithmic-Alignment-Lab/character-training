@@ -129,15 +129,26 @@ def parse_scenarios_response(response_text):
     return scenarios, thinking
 
 
-def run_ideation(config_path="bloom_settings.yaml", config=None):
-    """Run the ideation process using decomposition results."""
+def run_ideation(
+    config_path="bloom_settings.yaml", config=None, timestamp=None, resume=True
+):
+    """Run the full ideation process."""
 
-    # Load configuration
+
+    # Load configuration and existing data
     if config is None:
         config = load_config(config_path)
     example_name = config["behaviour"]["example"]
     behavior_name = config["behaviour"]["name"]
     ideation_model = config.get("ideation", {}).get("model", "claude-sonnet-4")
+
+    # Ensure results directory exists and save
+    results_dir = get_results_dir(example_name, timestamp)
+    output_path = results_dir / "ideation.json"
+
+    if resume and output_path.exists():
+        print(f"✅ Ideation results already exist at {output_path}. Skipping.")
+        return
     # Use evaluator_thinking_budget for ideation stage
     thinking_budget = config.get("evaluator_thinking_budget", 0.5)
     # Get temperature from global config
@@ -154,7 +165,7 @@ def run_ideation(config_path="bloom_settings.yaml", config=None):
     no_user_mode = config.get("evaluation", {}).get("no_user_mode", False)
 
     # Load decomposition results
-    decomposition_results = load_decomposition_results(example_name)
+    decomposition_results = load_decomposition_results(example_name, timestamp=timestamp)
 
     # Extract required fields from decomposition
     behaviour_understanding = decomposition_results["understanding"]
@@ -246,12 +257,9 @@ def run_ideation(config_path="bloom_settings.yaml", config=None):
         "thinking": thinking,
     }
 
-    # Ensure results directory exists and save
-    results_dir = get_results_dir(example_name)
-    output_file = results_dir / "ideation.json"
-    save_results_locally(results, str(output_file), example_name)
+    save_results_locally(results, str(output_path), example_name, timestamp=timestamp)
 
-    print(f"Results saved to: {output_file}")
+    print(f"Results saved to: {output_path}")
 
     # Print summary
     print("\n" + "=" * 60)
@@ -289,5 +297,16 @@ def run_ideation(config_path="bloom_settings.yaml", config=None):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "bloom_settings.yaml"
-    run_ideation(config_path)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the ideation stage of the BLOOM evaluation pipeline.")
+    parser.add_argument(
+        "config_path",
+        nargs="?",
+        default="bloom_settings.yaml",
+        help="Path to the configuration file (default: bloom_settings.yaml)",
+    )
+    parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    args = parser.parse_args()
+
+    run_ideation(config_path=args.config_path, timestamp=args.timestamp)

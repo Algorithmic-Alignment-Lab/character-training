@@ -63,4 +63,7 @@ git add .
 git commit -m "Add fine-tuned model"
 git push
 
+hf_repo_uri="https://hf.co/$username/$model_name"
+echo "HF_REPO_URI=$hf_repo_uri"
+
 popd

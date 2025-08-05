@@ -3,8 +3,10 @@ import os
 import time
 import json
 import fire
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
+from deploy_model import deploy_model
 
 # Make sure to set the TOGETHER_API_KEY environment variable
 
@@ -22,8 +24,8 @@ def get_file_id(filename: str) -> str:
 
 def run_finetuning(
     training_file_id: str,
-    model: str = "Qwen/Qwen1.5-32B-Chat",
-    n_epochs: int = 3,
+    model: str,
+    n_epochs: int = 2,
     suffix: str = "customer_service_eval",
 ) -> str:
     """Starts a fine-tuning job on Together AI."""
@@ -66,35 +68,40 @@ def follow_finetuning_job(job_id: str) -> dict:
             print(f"Error retrieving job status: {e}")
             time.sleep(60)
 
-def save_model_info(model_info: dict, output_dir: str = "evals/finetuning/"):
-    """Saves the fine-tuned model information to a JSON file."""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    output_file = os.path.join(output_dir, "finetuned_models.json")
+
+def _update_finetuned_json(model_id: str, hf_repo: str, model_info: dict = None):
+    """Updates the finetuned_models.json file with the Hugging Face repo ID."""
+    json_file = "evals/finetuning/finetuned_models.json"
     
     existing_data = []
-    if os.path.exists(output_file):
-        with open(output_file, 'r') as f:
+    if os.path.exists(json_file):
+        with open(json_file, 'r') as f:
             try:
                 existing_data = json.load(f)
             except json.JSONDecodeError:
-                print(f"Warning: Could not decode existing model data in {output_file}.")
+                print(f"Warning: Could not decode existing model data in {json_file}.")
+
+    entry_found = False
+    for i, entry in enumerate(existing_data):
+        if entry.get("model_name") == model_id:
+            if hf_repo:
+                existing_data[i]["hf_repo"] = hf_repo
+            if model_info:
+                existing_data[i].update(model_info)
+            entry_found = True
+            break
     
-    new_entry = {
-        "job_id": model_info.get("id"),
-        "model_name": model_info.get("fine_tuned_model"),
-        "base_model": model_info.get("model"),
-        "training_file_id": model_info.get("training_file"),
-        "created_at": datetime.now().isoformat(),
-    }
-    
-    existing_data.append(new_entry)
-    
-    with open(output_file, 'w') as f:
-        json.dump(existing_data, f, indent=4)
-        
-    print(f"Fine-tuned model info saved to: {output_file}")
+    if not entry_found:
+        new_entry = {"model_name": model_id}
+        if hf_repo:
+            new_entry["hf_repo"] = hf_repo
+        if model_info:
+            new_entry.update(model_info)
+        new_entry["created_at"] = datetime.now().isoformat()
+        existing_data.append(new_entry)
+
+    with open(json_file, 'w') as f:
+        json.dump(existing_data, f, indent=2)
 
 def main(
     train_file: str,
@@ -128,7 +135,18 @@ def main(
         
         # 4. Save the model info if completed
         if final_status.get("status") == "completed":
-            save_model_info(final_status)
+            model_id = final_status.get("fine_tuned_model")
+            hf_repo = None
+            try:
+                logging.info("Deploying model to Hugging Face...")
+                hf_repo = deploy_model(job_id=job_id, base_model_name=model)
+                logging.info(f"Successfully deployed model to {hf_repo}")
+            except Exception as e:
+                logging.error(f"Failed to deploy model: {e}")
+            
+            if model_id:
+                _update_finetuned_json(model_id, hf_repo, model_info=final_status)
+
         else:
             print("Fine-tuning did not complete successfully. Model info not saved.")
 

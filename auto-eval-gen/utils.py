@@ -17,6 +17,10 @@ import yaml
 from litellm import completion
 from litellm.utils import supports_reasoning
 
+# Add the parent directory to sys.path to import from evals
+sys.path.append(str(Path(__file__).parent.parent))
+from evals.llm_api import call_llm_api, load_vllm_lora_adapter
+
 from globals import models, NUM_RETRIES
 
 
@@ -206,49 +210,170 @@ def litellm_chat(
     tool_choice: str = "auto",
     **kwargs,
 ):
-    """Unified LiteLLM chat completion call with robust thinking and system prompt support."""
-    import litellm
+    """Unified LLM chat completion call with robust thinking and system prompt support."""
+    
+    # Check if this is a vLLM model
+    is_vllm_model = False
+    model_config = None
+    
+    # Find the model in our models dictionary
+    for model_name, config in models.items():
+        if config["id"] == model_id or model_name == model_id:
+            model_config = config
+            if config["org"] == "vllm":
+                is_vllm_model = True
+            break
+    
+    # If it's a vLLM model, use call_llm_api
+    if is_vllm_model:
+        import asyncio
+        
+        # Load LoRA adapter if required
+        if model_config and model_config.get("requires_lora", False):
+            try:
+                # Run LoRA loading synchronously
+                print(f"Loading LoRA adapter for vLLM model: {model_id}")
+                
+                # Handle event loop properly
+                try:
+                    # Try to get existing event loop
+                    loop = asyncio.get_running_loop()
+                    # If we're in an async context, we need to run in a thread
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(_load_lora_sync_wrapper, model_id)
+                        future.result(timeout=60)  # Wait up to 60 seconds
+                except RuntimeError:
+                    # No event loop running, we can use the sync function directly
+                    _load_lora_sync(model_id)
+                
+                print(f"✅ LoRA adapter loaded successfully for {model_id}")
+            except Exception as e:
+                print(f"❌ Failed to load LoRA adapter for {model_id}: {e}")
+                # Don't continue with fallback, raise the error
+                raise Exception(f"LoRA adapter loading required for model {model_id} but failed: {e}")
+        
+        # Prepare messages with system prompt
+        chat_messages = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.extend(messages)
+        
+        # Set up thinking parameter
+        thinking = None
+        if thinking_enabled:
+            thinking = {
+                "type": "enabled",
+                "budget_tokens": thinking_tokens,
+            }
+        
+        # Call our working call_llm_api function synchronously
+        try:
+            # Handle event loop properly for call_llm_api
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, we need to run in a thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(_call_api_sync_wrapper, chat_messages, model_id, temperature, max_tokens, thinking)
+                    result = future.result(timeout=120)  # Wait up to 2 minutes
+            except RuntimeError:
+                # No event loop running, we can create our own
+                result = asyncio.run(call_llm_api(
+                    messages=chat_messages,
+                    model=model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    thinking=thinking,
+                    caching=False,
+                ))
+        except Exception as e:
+            print(f"❌ vLLM API call failed for {model_id}: {e}")
+            raise Exception(f"vLLM API call failed for model {model_id}: {e}")
+        
+        # Convert result to litellm-compatible format
+        from types import SimpleNamespace
+        
+        choice = SimpleNamespace()
+        choice.message = SimpleNamespace()
+        choice.message.content = result.response_text
+        choice.message.reasoning_content = getattr(result, 'reasoning_content', '')
+        choice.message.thinking_content = getattr(result, 'thinking_content', '')
+        choice.message.tool_calls = []
+        
+        response = SimpleNamespace()
+        response.choices = [choice]
+        
+        return response
+    
+    else:
+        # Use litellm for non-vLLM models
+        import litellm
 
-    litellm.drop_params = True
-    chat_messages = []
-    if not system_prompt:
-        system_prompt = ""
-    if system_prompt:
-        chat_messages.append({"role": "system", "content": system_prompt})
-    chat_messages.extend(messages)
-    completion_kwargs = {}
-    if thinking_enabled and supports_reasoning(model=model_id):
-        completion_kwargs["thinking"] = {
-            "type": "enabled",
-            "budget_tokens": thinking_tokens,
-        }
-    if temperature is not None:
-        completion_kwargs["temperature"] = float(temperature)
-    # Add any additional valid kwargs
-    for k, v in kwargs.items():
-        if k in {
-            "tools",
-            "seed",
-            "stop",
-            "stream",
-            "user",
-            "response_format",
-            "functions",
-        }:
-            completion_kwargs[k] = v
+        litellm.drop_params = True
+        chat_messages = []
+        if not system_prompt:
+            system_prompt = ""
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.extend(messages)
+        completion_kwargs = {}
+        if thinking_enabled and supports_reasoning(model=model_id):
+            completion_kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": thinking_tokens,
+            }
+        if temperature is not None:
+            completion_kwargs["temperature"] = float(temperature)
+        # Add any additional valid kwargs
+        for k, v in kwargs.items():
+            if k in {
+                "tools",
+                "seed",
+                "stop",
+                "stream",
+                "user",
+                "response_format",
+                "functions",
+            }:
+                completion_kwargs[k] = v
 
-    # Handle tools parameter specifically
-    if tools:
-        completion_kwargs["tools"] = tools
-        completion_kwargs["tool_choice"] = tool_choice
-    response = completion(
+        # Handle tools parameter specifically
+        if tools:
+            completion_kwargs["tools"] = tools
+            completion_kwargs["tool_choice"] = tool_choice
+        
+        response = completion(
+            model=model_id,
+            messages=chat_messages,
+            max_tokens=max_tokens,
+            num_retries=NUM_RETRIES,  # Use global retry setting
+            **completion_kwargs,
+        )
+        return response
+
+
+def _load_lora_sync(model_id):
+    """Helper function to load LoRA adapter synchronously."""
+    load_vllm_lora_adapter(model_id)
+
+
+def _load_lora_sync_wrapper(model_id):
+    """Synchronous wrapper for LoRA loading."""
+    load_vllm_lora_adapter(model_id)
+
+
+def _call_api_sync_wrapper(messages, model_id, temperature, max_tokens, thinking):
+    """Synchronous wrapper for call_llm_api."""
+    import asyncio
+    return asyncio.run(call_llm_api(
+        messages=messages,
         model=model_id,
-        messages=chat_messages,
+        temperature=temperature,
         max_tokens=max_tokens,
-        num_retries=NUM_RETRIES,  # Use global retry setting
-        **completion_kwargs,
-    )
-    return response
+        thinking=thinking,
+        caching=False,
+    ))
 
 
 def get_model_id(model_name):
@@ -279,27 +404,13 @@ def get_model_name_from_id(model_id):
     return None  # Return None if not found
 
 
-def ensure_results_dir(example_name):
+def ensure_results_dir(example_name, timestamp=None):
     """Ensure the results directory exists for the given example."""
-    if is_wandb_mode():
-        # In wandb mode, create a unique run-specific directory
-        import wandb
-
-        if wandb.run is not None:
-            run_id = wandb.run.id
-            results_dir = Path(f"results/transcripts/{example_name}/run_{run_id}")
-        else:
-            # Fallback if wandb.run is None
-            results_dir = Path(f"results/transcripts/{example_name}")
-    else:
-        # In regular mode, use the standard directory
-        results_dir = Path(f"results/transcripts/{example_name}")
-
+    results_dir = get_results_dir(example_name, timestamp)
     results_dir.mkdir(parents=True, exist_ok=True)
     return results_dir
 
-
-def get_results_dir(example_name):
+def get_results_dir(example_name, timestamp=None):
     """Get the results directory path for the given example."""
     if is_wandb_mode():
         # In wandb mode, use the unique run-specific directory
@@ -313,30 +424,31 @@ def get_results_dir(example_name):
             return Path(f"results/transcripts/{example_name}")
     else:
         # In regular mode, use a timestamp to version the results
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        if not timestamp:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
         return Path(f"results/transcripts/{example_name}/{timestamp}")
 
 
-def load_ideation_results(example_name):
+def load_ideation_results(example_name, timestamp=None):
     """Load the ideation results for the given example."""
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp)
     ideation_path = results_dir / "ideation.json"
     with open(ideation_path, "r") as f:
         return json.load(f)
 
 
-def load_variation_results(example_name):
+def load_variation_results(example_name, timestamp=None):
     """Load the variation results for the given example."""
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp)
     variation_path = results_dir / "variation.json"
     with open(variation_path, "r") as f:
         return json.load(f)
 
 
-def load_decomposition_results(example_name):
+def load_decomposition_results(example_name, timestamp=None):
     """Load the decomposition results for the given example."""
-    results_dir = get_results_dir(example_name)
+    results_dir = get_results_dir(example_name, timestamp)
     decomposition_path = results_dir / "decomposition.json"
     with open(decomposition_path, "r") as f:
         return json.load(f)
@@ -352,9 +464,9 @@ def is_wandb_mode():
         return False
 
 
-def save_results_locally(results, output_file, example_name):
+def save_results_locally(results, output_file, example_name, timestamp=None):
     """Save results locally. In wandb mode, save temporarily for artifact logging."""
-    ensure_results_dir(example_name)
+    ensure_results_dir(example_name, timestamp=timestamp)
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
@@ -590,6 +702,28 @@ def _clean_text_content(full_text: str) -> str:
     )
 
     return clean.strip()
+
+
+def get_example_name_from_yaml(config_path: Path) -> Optional[str]:
+    """
+    Open a YAML config, read `behaviour.example`, defaulting gracefully.
+    Cache results to avoid repeat reads.
+    """
+    global _example_name_cache
+    if "_example_name_cache" not in globals():
+        _example_name_cache = {}
+
+    if config_path in _example_name_cache:
+        return _example_name_cache[config_path]
+
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+            example_name = config.get("behaviour", {}).get("example")
+            _example_name_cache[config_path] = example_name
+            return example_name
+    except (IOError, yaml.YAMLError):
+        return None
 
 
 def sanitize_judge_output(obj: dict) -> dict:

@@ -1,47 +1,106 @@
-Crate evaluations based on character_evaluation_plan.md for characters in character_definitions.json
+# Running Evaluations
 
-We start with agora ethical caution
+## Parallel Config Runner
 
-Useful Commands:
+A new script `scripts/run_parallel_configs.py` has been added to generate and run all Socratica and Clyde configurations in parallel. Here are example commands:
 
-**Running the Evaluation Generation**:
+### Basic Run (No Revision)
 
 ```bash
-python bloom_eval.py configs/bloom_settings_agora_ethical_caution_train_qwen-1.7.yaml --timestamp 20250804-114032-1.7 --no-resume
+python bloom_eval.py configs/bloom_settings_vllm_minimal.yaml --timestamp 20250805-0929 --no-resume
 
-python bloom_eval.py configs/bloom_settings_agora_collaboration_train_qwen-1.7.yaml --timestamp 20250804-114032-1.7 --no-resume
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character socratica \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 50 \
+                --iterations-per-variation 3
 
-python bloom_eval.py configs/bloom_settings_agora_inquisitiveness_train_qwen-1.7.yaml --timestamp 20250804-114032-1.7 --no-resume
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16 \
+                --character agora \
+                --character-full agora_collaborative_thinker \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 100 \
+                --timestamp 20250804-114032-trained \
+                --no-resume \
+                --iterations-per-variation 1
 
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_honesty.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_perspectives.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_right.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_limitations.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_relationship.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_uncertainty.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_clyde_unethical.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_collaborative.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_critical.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_development.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_guiding.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_intellectual.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_librarian.yaml
-python -m auto-eval-gen.scripts.evaluation auto-eval-gen/configs/bloom_settings_socratica_challenging.yaml
-python -m scripts.evaluation --config-name bloom_settings_socratica_challenging
-python -m scripts.evaluation --config-name bloom_settings_clyde_perspectives
-python -m scripts.evaluation --config-name bloom_settings_clyde_right
-python -m scripts.evaluation --config-name bloom_settings_clyde_limitations
-python -m scripts.evaluation --config-name bloom_settings_clyde_relationship
-python -m scripts.evaluation --config-name bloom_settings_clyde_uncertainty
-python -m scripts.evaluation --config-name bloom_settings_clyde_unethical
-python -m scripts.evaluation --config-name bloom_settings_socratica_critical
-python -m scripts.evaluation --config-name bloom_settings_socratica_development
-python -m scripts.evaluation --config-name bloom_settings_socratica_guiding
-python -m scripts.evaluation --config-name bloom_settings_socratica_intellectual
-python -m scripts.evaluation --config-name bloom_settings_socratica_librarian
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character agora \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 100 \
+                --timestamp 20250804-114032-base \
+                --no-resume \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16 \
+                --character agora \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 100 \
+                --timestamp 20250804-114032-trained \
+                --no-resume \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 50 \
+                --iterations-per-variation 3
+
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character socratica \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 50 \
+                --iterations-per-variation 3
 ```
 
-Note to change the steps that we are using
+### Run with Revision Enabled
+
+```bash
+python scripts/run_parallel_configs.py \
+  --metric eval_success_score \
+  --main-model "claude-sonnet-4" \
+  --target-model "qwen3-32b" \
+  --num-variations 50 \
+  --iterations-per-variation 2 \
+  --num-workers 4 \
+  --fixed-system-prompt "socratica_research_librarian" \
+  --max-concurrent 5 \
+  --enable-revision \
+  --revision-model "openrouter/openai/gpt-4-32k"
+```
+
+### Notes on Parallel Runner
+
+- Generates and runs configs for 7 Socratica and 7 Clyde variations
+- Each variation uses appropriate quality metrics (Socratica or Clyde)
+- `num-workers` controls parallel configs
+- `max-concurrent` controls concurrent evaluations per config
+
+## Individual Commands
 
 **Visualization**:
 
@@ -58,7 +117,7 @@ python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 -
 python evals/finetuning/prepare_data_from_transcripts.py auto-eval-gen/results/transcripts/agora_collaboration-example/20250804-114032-teacher auto-eval-gen/results/transcripts/agora_ethical_caution-example/20250804-114032-teacher auto-eval-gen/results/transcripts/agora_inquisitiveness-example/20250804-114032-teacher --output_dir evals/finetuning/finetuning_data --train_percentage 0.8
 
 # 2. Run finetuning with qwen-32b
-python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train.jsonl
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train_agora.jsonl
 
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-32B --train_file evals/finetuning/finetuning_data/train.jsonl
 
