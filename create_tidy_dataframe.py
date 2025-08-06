@@ -35,8 +35,8 @@ shared_conversation_ids = set(folder1_conversations.keys()).intersection(folder2
 if not shared_conversation_ids:
     print("No shared conversation IDs found between the two folders.")
 else:
-    conversation_judgments = load_judgments('auto-eval-gen/results/transcripts/')
-    teacher_judgments = load_judgments('auto-eval-gen/results_debiased/transcripts/')
+    conversation_judgments = load_judgments('auto_eval_gen/results/transcripts/')
+    teacher_judgments = load_judgments('auto_eval_gen/results_debiased/transcripts/')
 
     data_rows = []
     for conv_id in shared_conversation_ids:

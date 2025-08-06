@@ -1,0 +1,4 @@
+- Config, turns, number per response, number per behavior, system prompt, teacher model, student model
+- Train, split, SFT or DPO
+- Chat with trained model
+- Run on config, train or test

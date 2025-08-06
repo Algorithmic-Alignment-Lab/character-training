@@ -30,8 +30,8 @@ def load_judgments(root: str) -> dict[str, dict]:
     return judgments
 
 if __name__ == '__main__':
-    conversation_judgments = load_judgments('auto-eval-gen/results/transcripts/')
-    teacher_judgments = load_judgments('auto-eval-gen/results_debiased/transcripts/')
+    conversation_judgments = load_judgments('auto_eval_gen/results/transcripts/')
+    teacher_judgments = load_judgments('auto_eval_gen/results_debiased/transcripts/')
 
     print("Conversation Judgments:")
     print(conversation_judgments)

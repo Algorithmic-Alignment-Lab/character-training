@@ -22,8 +22,8 @@ def load_judgments(root: str) -> dict[str, dict]:
     return judgments
 
 # Load the judgments
-conversation_judgments = load_judgments('auto-eval-gen/results/transcripts/agora_inquisitiveness-example/20250804-114032')
-teacher_judgments = load_judgments('auto-eval-gen/results/transcripts/agora_inquisitiveness-example/20250804-114032-teacher')
+conversation_judgments = load_judgments('auto_eval_gen/results/transcripts/agora_inquisitiveness-example/20250804-114032')
+teacher_judgments = load_judgments('auto_eval_gen/results/transcripts/agora_inquisitiveness-example/20250804-114032-teacher')
 
 # Create a list of dictionaries
 data_rows = []

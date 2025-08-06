@@ -1,3 +1,4 @@
+# Forcing a file refresh to address potential caching issues.
 import logging
 import json
 import re
@@ -9,16 +10,29 @@ import time
 import random
 import subprocess
 import threading
+from pathlib import Path
 from typing import Optional, Type, TypeVar, List, Dict, Any
 
 import litellm
 from litellm.caching.caching import Cache
 from pydantic import BaseModel, Field, ValidationError
 
-# NOTE: load_vllm_lora_adapter is sourced from:
-# ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py
-# Defined locally to avoid complex dependency issues while maintaining relative import reference
+# Add project root to path for imports
+project_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(project_root))
 
+from auto_eval_gen.globals import models as model_registry
+
+# --- Pydantic Models for Structured Responses ---
+
+# Update litellm's model list with custom context window sizes
+for model_key, model_info in model_registry.items():
+    if "context_window" in model_info:
+        litellm.model_cost[model_info["id"]] = {
+            "max_input_tokens": model_info["context_window"],
+            "max_output_tokens": model_info.get("max_output_tokens", 4096), # Default output tokens
+        }
+        print(f"Set custom context window for {model_info['id']}: {model_info['context_window']}")
 
 class APICallLog(BaseModel):
     """A log of a single API call."""
