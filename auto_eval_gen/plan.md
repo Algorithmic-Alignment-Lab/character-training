@@ -17,7 +17,8 @@ python scripts/run_parallel_configs.py \
                 --num-workers 10 \
                 --max-concurrent 30 \
                 --num-variations 5 \
-                --iterations-per-variation 1
+                --iterations-per-variation 1 \
+                --timestamp 20250806-170652
 
 /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen and /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen should work for auto_eval_gen/scripts/run_parallel_configs.py
 
