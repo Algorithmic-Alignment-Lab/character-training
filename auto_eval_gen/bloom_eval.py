@@ -37,8 +37,9 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("safetytooling").setLevel(logging.ERROR)
 
 # Add project root to path for imports
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.resolve()
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root.parent))
 
 # Try to import wandb, but don't fail if it's not available
 try:
@@ -105,81 +106,82 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
     print("=" * 60)
 
     if not only_revision:
-    print("\n1. Running DECOMPOSITION...")
-    print("-" * 30)
-    base_resume = True
-    try:
-        from scripts.decomposition import run_decomposition
+        # Step 1: Decomposition
+        print("\n1. Running DECOMPOSITION...")
+        print("-" * 30)
+        base_resume = True
+        try:
+            from scripts.decomposition import run_decomposition
 
-        run_decomposition(config=config, timestamp=timestamp, resume=base_resume)
-        print("✅ Decomposition completed successfully")
-    except Exception as e:
-        print(f"❌ Decomposition failed: {e}")
-        return False
-
-    # Step 2: ideation
-    print("\n2. Running ideation...")
-    print("-" * 30)
-    try:
-        from scripts.ideation import run_ideation
-
-        run_ideation(config=config, timestamp=timestamp, resume=base_resume)
-        print("✅ ideation completed successfully")
-    except Exception as e:
-        print(f"❌ ideation failed: {e}")
-        return False
-
-    # Step 3: Variation
-    print("\n3. Running VARIATION...")
-    print("-" * 30)
-    try:
-        from scripts.variation import run_variation
-
-        run_variation(config=config, timestamp=timestamp, resume=base_resume)
-        print("✅ Variation completed successfully")
-    except Exception as e:
-        print(f"❌ Variation failed: {e}")
-        return False
-
-    # Step 4: evaluation
-    print("\n4. Running evaluation...")
-    print("-" * 30)
-    try:
-        import asyncio
-
-        from scripts.evaluation import run_evaluation
-
-        evaluation_results = asyncio.run(run_evaluation(config=config, timestamp=timestamp, resume=resume))
-        if evaluation_results is None:
-            print("❌ evaluation failed")
+            run_decomposition(config=config, timestamp=timestamp, resume=base_resume)
+            print("✅ Decomposition completed successfully")
+        except Exception as e:
+            print(f"❌ Decomposition failed: {e}")
             return False
-        print("✅ evaluation completed successfully")
-    except Exception as e:
-        print(f"❌ evaluation failed: {e}")
-        return False
 
-    # Step 5: Judgment
-    print("\n5. Running JUDGMENT...")
-    print("-" * 30)
-    try:
-        import asyncio
+        # Step 2: ideation
+        print("\n2. Running ideation...")
+        print("-" * 30)
+        try:
+            from scripts.ideation import run_ideation
 
-        from scripts.judgment import run_judgment
-
-        judgment_results = asyncio.run(
-            run_judgment(config=config, timestamp=timestamp, resume=resume)
-        )
-        if judgment_results is None:
-            print("❌ Judgment failed")
+            run_ideation(config=config, timestamp=timestamp, resume=base_resume)
+            print("✅ ideation completed successfully")
+        except Exception as e:
+            print(f"❌ ideation failed: {e}")
             return False
-        print("✅ Judgment completed successfully")
 
-        # Log metrics to wandb
-        log_metrics_to_wandb(judgment_results, config)
+        # Step 3: Variation
+        print("\n3. Running VARIATION...")
+        print("-" * 30)
+        try:
+            from scripts.variation import run_variation
 
-    except Exception as e:
-        print(f"❌ Judgment failed: {e}")
-        return False
+            run_variation(config=config, timestamp=timestamp, resume=base_resume)
+            print("✅ Variation completed successfully")
+        except Exception as e:
+            print(f"❌ Variation failed: {e}")
+            return False
+
+        # Step 4: evaluation
+        print("\n4. Running evaluation...")
+        print("-" * 30)
+        try:
+            import asyncio
+
+            from scripts.evaluation import run_evaluation
+
+            evaluation_results = asyncio.run(run_evaluation(config=config, timestamp=timestamp, resume=resume))
+            if evaluation_results is None:
+                print("❌ evaluation failed")
+                return False
+            print("✅ evaluation completed successfully")
+        except Exception as e:
+            print(f"❌ evaluation failed: {e}")
+            return False
+
+        # Step 5: Judgment
+        print("\n5. Running JUDGMENT...")
+        print("-" * 30)
+        try:
+            import asyncio
+
+            from scripts.judgment import run_judgment
+
+            judgment_results = asyncio.run(
+                run_judgment(config=config, timestamp=timestamp, resume=resume)
+            )
+            if judgment_results is None:
+                print("❌ Judgment failed")
+                return False
+            print("✅ Judgment completed successfully")
+
+            # Log metrics to wandb
+            log_metrics_to_wandb(judgment_results, config)
+
+        except Exception as e:
+            print(f"❌ Judgment failed: {e}")
+            return False
 
     # Step 6: Revision Loop
     if not config.get("no_revision", False):
@@ -194,7 +196,7 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
                 # Run revision
                 revised_transcripts = asyncio.run(
                     run_revision(
-                        config_path=config["config_path"],
+                        config=config,
                         timestamp=timestamp,
                         iteration=i,
                         resume=resume,
@@ -208,7 +210,7 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
                 print(f"\n--- Re-judging revised transcripts for iteration {i} ---")
                 revised_judgment_results = asyncio.run(
                     run_judgment(
-                        config_path=config["config_path"],
+                        config=config,
                         timestamp=timestamp,
                         conversation_paths=revised_transcripts,
                         resume=resume,
@@ -400,12 +402,10 @@ def main():
     parser.add_argument("--no-resume", action="store_true", help="Do not resume, run all judgments again.")
     args = parser.parse_args()
 
-    with suppress_stderr_messages():
-        # Check if we're running in a wandb sweep by looking for command line arguments
-        # that indicate we're in a sweep (wandb agent passes config as command line args)
-        is_sweep_mode = any(arg.startswith("--") and arg not in ["--timestamp", "--no-resume"] for arg in sys.argv[1:])
+    is_sweep_mode = any(arg.startswith("--") and arg not in ["--timestamp", "--no-resume", "--only-revision"] for arg in sys.argv[1:])
 
-        if is_sweep_mode and wandb:
+    if is_sweep_mode and wandb:
+        with suppress_stderr_messages():
             print("🚀 Running in wandb sweep mode")
 
             # Initialize wandb for sweep
@@ -438,7 +438,7 @@ def main():
                 wandb.config.update(config)
 
             # Run the pipeline
-            judgment_results = run_pipeline(config, resume=not args.no_resume)
+            judgment_results = run_pipeline(config, resume=not args.no_resume, only_revision=args.only_revision)
 
             if judgment_results:
                 # Log metrics to wandb
@@ -456,24 +456,24 @@ def main():
                 print("❌ Pipeline failed, not logging to wandb")
                 sys.exit(1)
 
-        else:
-            print("🔧 Running in regular mode (no wandb sweep)")
-            config = load_config(args.config_path)
+    else:
+        print("🔧 Running in regular mode (no wandb sweep)")
+        config = load_config(args.config_path)
 
-            # Handle --no-resume deletion
-            if args.no_resume:
-                example_name = config.get("behaviour", {}).get("example")
-                if example_name:
-                    results_dir = get_results_dir(example_name)
-                    if results_dir.exists():
-                        print(f"--no-resume: Deleting existing results dir {results_dir}")
-                        shutil.rmtree(results_dir)
-                    results_dir.mkdir(parents=True, exist_ok=True)
+        # Handle --no-resume deletion
+        if args.no_resume:
+            example_name = config.get("behaviour", {}).get("example")
+            if example_name:
+                results_dir = get_results_dir(example_name)
+                if results_dir.exists():
+                    print(f"--no-resume: Deleting existing results dir {results_dir}")
+                    shutil.rmtree(results_dir)
+                results_dir.mkdir(parents=True, exist_ok=True)
 
-            # Set a fixed timestamp for the entire run
-            timestamp = args.timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M")
-            success = run_pipeline(config, timestamp=timestamp, resume=not args.no_resume, only_revision=args.only_revision)
-            sys.exit(0 if success else 1)
+        # Set a fixed timestamp for the entire run
+        timestamp = args.timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M")
+        success = run_pipeline(config, timestamp=timestamp, resume=not args.no_resume, only_revision=args.only_revision)
+        sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

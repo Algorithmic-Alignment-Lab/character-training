@@ -19,6 +19,9 @@ python scripts/run_parallel_configs.py \
                 --num-variations 5 \
                 --iterations-per-variation 1
 
+/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen and /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen should work for auto_eval_gen/scripts/run_parallel_configs.py
+
+
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
                 --student-model qwen3-32b \

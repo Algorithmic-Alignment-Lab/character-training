@@ -1,6 +1,3 @@
-# NOTE: bloom_eval.py path is resolved relative to this file so script
-# can be invoked from any directory (see ConfigRunner.run_config).
-
 import yaml
 import argparse
 import os
@@ -45,21 +42,10 @@ AGORA_QUALITIES = EVAL_QUALITIES + AGORA_VARIATIONS
 class ConfigRunner:
     def __init__(self, base_dir: str, run_timestamp: Optional[str] = None, no_resume: bool = False):
         self.base_dir = base_dir
-        # Find project root - the directory containing bloom_eval.py
-        self.project_root = self._find_project_root()
         self.config_dir = os.path.join(base_dir, "configs")
         self.run_timestamp = run_timestamp
         self.no_resume = no_resume
         os.makedirs(self.config_dir, exist_ok=True)
-    
-    def _find_project_root(self) -> str:
-        """Find the project root directory containing bloom_eval.py."""
-        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if os.path.exists(os.path.join(current_dir, 'bloom_eval.py')):
-            return current_dir
-        raise FileNotFoundError(
-            "Could not find bloom_eval.py in the project root. "
-            "Make sure you're running the script from within the project.")
 
     def generate_config(
         self,
@@ -106,15 +92,21 @@ class ConfigRunner:
         return filepath
 
     def run_config(self, config_path: str):
-        # Resolve bloom_eval.py relative to this file's package root
-        bloom_path = os.path.join(os.path.dirname(__file__), "..", "bloom_eval.py")
-        bloom_path = os.path.abspath(bloom_path)
-        cmd = ["python", bloom_path, os.path.relpath(config_path, self.base_dir), "--only-revision"]
+        config_path = os.path.relpath(config_path, self.base_dir)
+        cmd = ["python", "bloom_eval.py", config_path]
         if self.no_resume:
             cmd.append("--no-resume")
         if self.run_timestamp:
             cmd.extend(["--timestamp", self.run_timestamp])
-        subprocess.run(cmd, cwd=self.base_dir, check=True)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.pathsep + env.get("PYTHONPATH", "")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.pathsep + env.get("PYTHONPATH", "")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.pathsep + env.get("PYTHONPATH", "")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.pathsep + env.get("PYTHONPATH", "")
+        subprocess.run(cmd, cwd=self.base_dir, check=True, env=env)
 
 def run_config_worker(config_path: str, base_dir: str, run_timestamp: Optional[str], no_resume: bool):
     """Helper function to be called by the process pool."""
@@ -155,8 +147,7 @@ def run_all_variations(
     iterations_per_variation: int,
     base_dir: str,
     run_timestamp: str,
-    no_resume: bool,
-    run_revision_loop: bool
+    no_resume: bool
 ):
     runner = ConfigRunner(base_dir or os.getcwd(), run_timestamp=run_timestamp, no_resume=no_resume)
     config_files = []
@@ -184,8 +175,6 @@ def run_all_variations(
             iterations_per_variation=iterations_per_variation,
             additional_qualities=qualities
         )
-        if not run_revision_loop:
-            config['no_revision'] = True
         config_path = runner.save_config(config, behavior_name, student_model)
         config_files.append(config_path)
 
@@ -254,7 +243,6 @@ def main():
     parser.add_argument('--iterations-per-variation', type=int, default=3, help='Number of repetitions for each variation')
     parser.add_argument('--base-dir', type=str, default=os.getcwd(), help='Base directory containing bloom_eval.py')
     parser.add_argument('--timestamp', type=str, help='A specific timestamp to use for all runs.')
-    parser.add_argument('--run-revision-loop', action='store_true', help='Run the revision loop after the main evaluation.')
     parser.add_argument('--no-resume', action='store_true', help='Do not resume from previous runs.')
 
     args = parser.parse_args()
@@ -284,8 +272,7 @@ def main():
         iterations_per_variation=args.iterations_per_variation,
         base_dir=args.base_dir,
         run_timestamp=run_timestamp,
-        no_resume=args.no_resume,
-        run_revision_loop=args.run_revision_loop
+        no_resume=args.no_resume
     )
 
 if __name__ == '__main__':
