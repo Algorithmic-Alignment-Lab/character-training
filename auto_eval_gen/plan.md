@@ -11,6 +11,26 @@ python bloom_eval.py configs/bloom_settings_vllm_minimal.yaml --timestamp 202508
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character agora \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character agora \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 1 \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
                 --student-model claude-sonnet-4 \
                 --character socratica \
                 --character-full socratica_research_librarian_backstory \
@@ -116,7 +136,7 @@ python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/t
 # 2. Run finetuning with qwen-32b
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train_agora.jsonl
 
-python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-32B --train_file evals/finetuning/finetuning_data/train.jsonl
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-32B --train_file evals/finetuning/finetuning_data/train_agora.jsonl
 
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
 ```

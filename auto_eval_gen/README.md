@@ -27,6 +27,8 @@ auto_eval_gen implements a multi-step pipeline that takes an example conversatio
    ```bash
    python bloom_eval.py
    ```
+   
+   The script can be invoked from any directory, as the pipeline resolves `bloom_eval.py` relative to the script location.
 
 You can also run individual stages of the pipeline, for example `python scripts/decomposition.py` which are also configured by the `bloom_settings.yaml` files. However, each stage depends on the output of a previous stage / previous stages.
 

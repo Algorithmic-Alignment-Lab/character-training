@@ -1,3 +1,8 @@
+auto_eval_gen/
+├── bloom_eval.py
+└── scripts/
+    └── run_parallel_configs.py
+
 # Debiased Notes
 
 ## Rubric:

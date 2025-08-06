@@ -21,7 +21,7 @@ from litellm.utils import supports_reasoning
 sys.path.append(str(Path(__file__).parent.parent))
 from evals.llm_api import call_llm_api, load_vllm_lora_adapter
 
-from ..globals import models, NUM_RETRIES
+from auto_eval_gen.globals import models, NUM_RETRIES
 
 
 def setup_project_path():

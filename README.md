@@ -59,3 +59,16 @@ This will generate a file named `comparison.png` that looks like this:
 
 ![Comparison Plot](comparison.png)
 
+## Testing LoRA inference
+
+To test LoRA inference, you can use the following CLI command:
+
+```bash
+python -m inference.test_inference --model_id <your_model_id> --prompt "<your_prompt>"
+```
+
+For RunPod scaling, you will need to set the following environment variables:
+
+- `RUNPOD_API_KEY`
+- `RUNPOD_ENDPOINT_ID`
+

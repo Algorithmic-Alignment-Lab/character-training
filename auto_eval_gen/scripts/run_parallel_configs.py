@@ -1,3 +1,6 @@
+# NOTE: bloom_eval.py path is resolved relative to this file so script
+# can be invoked from any directory (see ConfigRunner.run_config).
+
 import yaml
 import argparse
 import os
@@ -11,60 +14,52 @@ from functools import partial
 
 # --- Constants --- #
 SOCRATICA_VARIATIONS = [
-    "challenging", "collaborative", "critical", "development",
-    "guiding", "intellectual", "librarian"
+    "socratica_challenging", "socratica_collaborative", "socratica_critical", "socratica_development",
+    "socratica_guiding", "socratica_intellectual", "socratica_librarian", "sself_knowledge",
 ]
 
 CLYDE_VARIATIONS = [
-    "honesty", "limitations", "perspectives", "relationship",
-    "right", "uncertainty", "unethical"
+    "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
+    "clyde_right", "clyde_uncertainty", "clyde_unethical", "self_knowledge",
 ]
 
 AGORA_VARIATIONS = [
-    "ethical_caution",
-    "inquisitiveness",
-    "collaboration"
+    "agora_ethical_caution",
+    "agora_inquisitiveness",
+    "agora_collaboration",
+    "self_knowledge",
 ]
 
 
 EVAL_QUALITIES = [
-    "eval-realism", "evaluator-forcefulness-opposite", "behavioural-consistency"
+    "eval-realism", "evaluator-forcefulness-opposite", "character_consistency", 
 ]
 
-SOCRATICA_QUALITIES = EVAL_QUALITIES + [
-    f"socratica_{v}" for v in SOCRATICA_VARIATIONS
-]
+SOCRATICA_QUALITIES = EVAL_QUALITIES + SOCRATICA_VARIATIONS
 
-CLYDE_QUALITIES = EVAL_QUALITIES + [
-    f"clyde_{v}" for v in CLYDE_VARIATIONS
-]
+CLYDE_QUALITIES = EVAL_QUALITIES + CLYDE_VARIATIONS
 
-
-EVAL_QUALITIES = [
-    "eval-realism", "evaluator-forcefulness-opposite", "behavioural-consistency"
-]
-
-SOCRATICA_QUALITIES = EVAL_QUALITIES + [
-    f"socratica_{v}" for v in SOCRATICA_VARIATIONS
-]
-
-CLYDE_QUALITIES = EVAL_QUALITIES + [
-    f"clyde_{v}" for v in CLYDE_VARIATIONS
-]
-
-AGORA_QUALITIES = EVAL_QUALITIES + [
-    f"agora_{v}" for v in AGORA_VARIATIONS
-]
-
+AGORA_QUALITIES = EVAL_QUALITIES + AGORA_VARIATIONS
 
 # --- Core Classes and Functions --- #
 class ConfigRunner:
     def __init__(self, base_dir: str, run_timestamp: Optional[str] = None, no_resume: bool = False):
         self.base_dir = base_dir
+        # Find project root - the directory containing bloom_eval.py
+        self.project_root = self._find_project_root()
         self.config_dir = os.path.join(base_dir, "configs")
         self.run_timestamp = run_timestamp
         self.no_resume = no_resume
         os.makedirs(self.config_dir, exist_ok=True)
+    
+    def _find_project_root(self) -> str:
+        """Find the project root directory containing bloom_eval.py."""
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if os.path.exists(os.path.join(current_dir, 'bloom_eval.py')):
+            return current_dir
+        raise FileNotFoundError(
+            "Could not find bloom_eval.py in the project root. "
+            "Make sure you're running the script from within the project.")
 
     def generate_config(
         self,
@@ -85,7 +80,7 @@ class ConfigRunner:
             "evaluator_thinking_budget": 0.5,
             "target_thinking_budget": 0.2,
             "decomposition": {"model": teacher_model, "max_tokens": 4000},
-            "ideation": {"model": teacher_model, "total_evals": 100, "diversity": 0.8, "max_tokens": 4000},
+            "ideation": {"model": teacher_model, "total_evals": num_variations, "diversity": 1, "max_tokens": 4000},
             "variation": {"model": teacher_model, "max_tokens": 4000},
             "evaluation": {
                 "model": teacher_model,
@@ -100,7 +95,7 @@ class ConfigRunner:
                 "no_user_mode": False,
                 "fixed_system_prompt": character
             },
-            "judge": {"model": teacher_model, "max_tokens": 4000, "additional_qualities": additional_qualities}
+            "judge": {"model": teacher_model, "max_tokens": 4000, "additional_qualities": additional_qualities},
         }
 
     def save_config(self, config: Dict, behavior_name: str, student_model: str) -> str:
@@ -111,8 +106,10 @@ class ConfigRunner:
         return filepath
 
     def run_config(self, config_path: str):
-        config_path = os.path.relpath(config_path, self.base_dir)
-        cmd = ["python", "bloom_eval.py", config_path]
+        # Resolve bloom_eval.py relative to this file's package root
+        bloom_path = os.path.join(os.path.dirname(__file__), "..", "bloom_eval.py")
+        bloom_path = os.path.abspath(bloom_path)
+        cmd = ["python", bloom_path, os.path.relpath(config_path, self.base_dir), "--only-revision"]
         if self.no_resume:
             cmd.append("--no-resume")
         if self.run_timestamp:
@@ -158,7 +155,8 @@ def run_all_variations(
     iterations_per_variation: int,
     base_dir: str,
     run_timestamp: str,
-    no_resume: bool
+    no_resume: bool,
+    run_revision_loop: bool
 ):
     runner = ConfigRunner(base_dir or os.getcwd(), run_timestamp=run_timestamp, no_resume=no_resume)
     config_files = []
@@ -175,7 +173,7 @@ def run_all_variations(
     prompt_character = character_full or character
 
     for variation in variations:
-        behavior_name = f"{char_name}_{variation}"
+        behavior_name = variation
         config = runner.generate_config(
             teacher_model=teacher_model,
             student_model=student_model,
@@ -186,6 +184,8 @@ def run_all_variations(
             iterations_per_variation=iterations_per_variation,
             additional_qualities=qualities
         )
+        if not run_revision_loop:
+            config['no_revision'] = True
         config_path = runner.save_config(config, behavior_name, student_model)
         config_files.append(config_path)
 
@@ -232,11 +232,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''Example usage:
     # Run evaluations for socratica
-    python scripts/run_parallel_configs.py \ 
+    python scripts/run_parallel_configs.py \
         --teacher-model claude-sonnet-4 --student-model qwen3-1.7b --character socratica
 
     # Run evaluations for clyde with a specific prompt
-    python scripts/run_parallel_configs.py \ 
+    python scripts/run_parallel_configs.py \
         --teacher-model claude-sonnet-4 --student-model qwen3-1.7b --character clyde --character-full clyde-thoughtful-assistant
 '''
     )
@@ -254,6 +254,7 @@ def main():
     parser.add_argument('--iterations-per-variation', type=int, default=3, help='Number of repetitions for each variation')
     parser.add_argument('--base-dir', type=str, default=os.getcwd(), help='Base directory containing bloom_eval.py')
     parser.add_argument('--timestamp', type=str, help='A specific timestamp to use for all runs.')
+    parser.add_argument('--run-revision-loop', action='store_true', help='Run the revision loop after the main evaluation.')
     parser.add_argument('--no-resume', action='store_true', help='Do not resume from previous runs.')
 
     args = parser.parse_args()
@@ -283,8 +284,10 @@ def main():
         iterations_per_variation=args.iterations_per_variation,
         base_dir=args.base_dir,
         run_timestamp=run_timestamp,
-        no_resume=args.no_resume
+        no_resume=args.no_resume,
+        run_revision_loop=args.run_revision_loop
     )
 
 if __name__ == '__main__':
     main()
+

@@ -6,9 +6,8 @@ from pathlib import Path
 import asyncio
 
 # Add project root to path for imports
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
-# Add parent of project root to import from evals
 sys.path.insert(0, str(project_root.parent))
 
 from utils import (
@@ -187,3 +186,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     asyncio.run(run_revision(config_path=args.config_path, timestamp=args.timestamp, iteration=args.iteration))
+

@@ -97,14 +97,14 @@ def suppress_stderr_messages():
         sys.stderr = old_stderr
 
 
-def run_pipeline(config=None, timestamp=None, resume=True):
+def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
     """Run the complete BLOOM evaluation pipeline."""
 
     print("=" * 60)
     print("BLOOM EVALS PIPELINE ")
     print("=" * 60)
 
-    # Step 1: Decomposition
+    if not only_revision:
     print("\n1. Running DECOMPOSITION...")
     print("-" * 30)
     base_resume = True
@@ -396,6 +396,7 @@ def main():
         help="Path to the configuration file (default: bloom_settings.yaml)",
     )
     parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
+    parser.add_argument("--only-revision", action="store_true", help="Run only the revision part of the pipeline.")
     parser.add_argument("--no-resume", action="store_true", help="Do not resume, run all judgments again.")
     args = parser.parse_args()
 
@@ -471,9 +472,10 @@ def main():
 
             # Set a fixed timestamp for the entire run
             timestamp = args.timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M")
-            success = run_pipeline(config, timestamp=timestamp, resume=not args.no_resume)
+            success = run_pipeline(config, timestamp=timestamp, resume=not args.no_resume, only_revision=args.only_revision)
             sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
     main()
+
