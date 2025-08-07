@@ -37,9 +37,10 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("safetytooling").setLevel(logging.ERROR)
 
 # Add project root to path for imports
-project_root = Path(__file__).parent.resolve()
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root.parent))
+# This is no longer needed with an installable package
+# project_root = Path(__file__).parent.parent.resolve()
+# if str(project_root) not in sys.path:
+#     sys.path.insert(0, str(project_root))
 
 # Try to import wandb, but don't fail if it's not available
 try:
@@ -104,6 +105,9 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
     print("=" * 60)
     print("BLOOM EVALS PIPELINE ")
     print("=" * 60)
+
+    # Initialize judgment_results to None in case only_revision=True
+    judgment_results = None
 
     if not only_revision:
         # Step 1: Decomposition
@@ -184,11 +188,13 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
             return False
 
     # Step 6: Revision Loop
-    if not config.get("no_revision", False):
-        max_revisions = config.get("max_revisions", 3)
+    #if not config.get("no_revision", False):
+    else:
+        max_revisions = config.get("max_revisions", 1)
         print(f"\n6. Running REVISION loop (max {max_revisions} iterations)...")
         print("-" * 30)
         try:
+            import asyncio
             from scripts.revision import run_revision
 
             for i in range(max_revisions):

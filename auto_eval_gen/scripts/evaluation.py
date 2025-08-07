@@ -6,14 +6,15 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# No longer needed with an installable package
+# project_root = Path(__file__).parent.parent
+# sys.path.insert(0, str(project_root))
 
-from orchestrators.ConversationOrchestrator import ConversationOrchestrator
-from orchestrators.SimEnvOrchestrator import SimEnvOrchestrator
-from prompts.model_organism import make_system_prompt as make_model_organism_prompt
-from prompts.step3_evaluation import make_evaluation_prompt, make_system_prompt
-from utils import (
+from auto_eval_gen.orchestrators.ConversationOrchestrator import ConversationOrchestrator
+from auto_eval_gen.orchestrators.SimEnvOrchestrator import SimEnvOrchestrator
+from auto_eval_gen.prompts.model_organism import make_system_prompt as make_model_organism_prompt
+from auto_eval_gen.prompts.step3_evaluation import make_evaluation_prompt, make_system_prompt
+from auto_eval_gen.utils import (
     calculate_thinking_tokens,
     ensure_results_dir,
     extract_transcript,

@@ -1,0 +1,88 @@
+Metadata-Version: 2.4
+Name: auto_eval_gen
+Version: 0.1.0
+Summary: Automatic evaluation generation for AI alignment
+Author-email: Your Name <you@example.com>
+Project-URL: Homepage, https://github.com/algorithmic-alignment-lab/character-training
+Project-URL: Bug Tracker, https://github.com/algorithmic-alignment-lab/character-training/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Dynamic: requires-python
+
+# Character Training
+
+This repository contains the code for training and evaluating AI characters.
+
+## Webapp
+
+To browse and inspect conversation JSON files, you can use the webapp located in `evals/webapp`.
+
+### Setup
+
+1.  Install Flask:
+    ```bash
+    pip install flask
+    ```
+
+2.  Navigate to the webapp directory:
+    ```bash
+    cd evals/webapp
+    ```
+
+3.  Start the Flask development server:
+    ```bash
+    python app.py
+    ```
+
+4.  Open your browser and go to:
+    ```
+    http://localhost:8555
+    ```
+
+### Screenshot
+
+![WebApp Screenshot](https://i.imgur.com/your-screenshot.gif)
+
+## vLLM Support
+
+The system now supports self-hosted vLLM models with automatic fallback to OpenRouter:
+
+- Use HuggingFace model IDs directly: `model="org/model-name"`
+- Automatic thinking/reasoning support
+- Graceful fallback to OpenRouter if vLLM unavailable
+- Full tool calling support maintained
+
+Example:
+```python
+chatter = ModelChatter(model="stewy33/my-model")
+response = await chatter.chat("Hello!")
+```
+
+## Generating Comparison Plot
+
+To generate a plot comparing the scores from the `tidy_data.csv` file, run the following command:
+
+```bash
+python plot_comparison.py
+```
+
+This will generate a file named `comparison.png` that looks like this:
+
+![Comparison Plot](comparison.png)
+
+## Testing LoRA inference
+
+To test LoRA inference, you can use the following CLI command:
+
+```bash
+python -m inference.test_inference --model_id <your_model_id> --prompt "<your_prompt>"
+```
+
+For RunPod scaling, you will need to set the following environment variables:
+
+- `RUNPOD_API_KEY`
+- `RUNPOD_ENDPOINT_ID`
+

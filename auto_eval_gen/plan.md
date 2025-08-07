@@ -7,18 +7,55 @@ A new script `scripts/run_parallel_configs.py` has been added to generate and ru
 ### Basic Run (No Revision)
 
 ```bash
-python bloom_eval.py configs/bloom_settings_vllm_minimal.yaml --timestamp 20250805-0929 --no-resume
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 1 \
+                --iterations-per-variation 1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 1 \
+                --iterations-per-variation 1 \
+                --timestamp "20250807-083647"
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
                 --student-model qwen3-32b \
                 --character agora \
-                --character-full default \
+                --character-full agora_collaborative_thinker \
                 --num-workers 10 \
                 --max-concurrent 30 \
-                --num-variations 5 \
+                --num-variations 1 \
                 --iterations-per-variation 1 \
                 --timestamp 20250806-170652
+
+python bloom_eval.py configs/bloom_settings_vllm_minimal.yaml --timestamp 20250805-0929 --no-resume
+
+python scripts/run_parallel_configs.py --teacher-model claude-4-sonnet --student-model qwen3-32b --character "agora" --run-only-revision --num-variations 1 --timestamp "20250806-170652"
+
+
+python -m auto_eval_gen.bloom_eval auto_eval_gen/configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b.yaml --timestamp 20250806-170652 --only-revision
+
 
 /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen and /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen should work for auto_eval_gen/scripts/run_parallel_configs.py
 
@@ -126,7 +163,7 @@ python scripts/run_parallel_configs.py \
 **Visualization**:
 
 ```bash
-npx @kaifronsdal/transcript-viewer@1.0.20 --dir auto_eval_gen/results/transcripts --port 8080 -f
+npx @kaifronsdal/transcript-viewer@1.0.20 --dir results/transcripts --port 8080 -f
 
 python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 --dir results_debiased/transcripts --port 8090 -f
 ```

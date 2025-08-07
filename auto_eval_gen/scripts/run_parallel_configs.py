@@ -12,24 +12,28 @@ from functools import partial
 # --- Constants --- #
 SOCRATICA_VARIATIONS = [
     "socratica_challenging", "socratica_collaborative", "socratica_critical", "socratica_development",
-    "socratica_guiding", "socratica_intellectual", "socratica_librarian", "sself_knowledge",
+    "socratica_guiding", "socratica_intellectual", "socratica_librarian", "socratica_self_knowledge",
 ]
 
+# CLYDE_VARIATIONS = [
+#     "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
+#     "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge",
+# ]
+
 CLYDE_VARIATIONS = [
-    "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
-    "clyde_right", "clyde_uncertainty", "clyde_unethical", "self_knowledge",
+    "clyde_self_knowledge"
 ]
 
 AGORA_VARIATIONS = [
     "agora_ethical_caution",
     "agora_inquisitiveness",
     "agora_collaboration",
-    "self_knowledge",
+    "agora_self_knowledge",
 ]
 
 
 EVAL_QUALITIES = [
-    "eval-realism", "evaluator-forcefulness-opposite", "character_consistency", 
+    "eval-realism", "evaluator-forcefulness-opposite", "character_inconsistency", "eval_difficulty", 
 ]
 
 SOCRATICA_QUALITIES = EVAL_QUALITIES + SOCRATICA_VARIATIONS

@@ -6,10 +6,11 @@ import sys
 from pathlib import Path
 
 # Add project root to path for imports
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+# No longer needed with an installable package
+# project_root = Path(__file__).parent.parent
+# sys.path.insert(0, str(project_root))
 
-from utils import (
+from auto_eval_gen.utils import (
     calculate_thinking_tokens,
     extract_litellm_content,
     get_model_id,
@@ -23,7 +24,7 @@ from utils import (
     save_results_locally,
     setup_project_path,
 )
-from transcript_utils import (
+from auto_eval_gen.transcript_utils import (
     load_transcript,
     append_judge_output_to_transcript,
     format_transcript_for_judge,
@@ -32,7 +33,7 @@ from transcript_utils import (
 # Setup project path for imports
 setup_project_path()
 
-from prompts.step4_judge import make_judge_prompt, make_system_prompt
+from auto_eval_gen.prompts.step4_judge import make_judge_prompt, make_system_prompt
 
 
 def parse_judgment_response(response_text, additional_qualities=None):

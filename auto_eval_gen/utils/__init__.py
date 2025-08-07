@@ -18,7 +18,7 @@ from litellm import completion
 from litellm.utils import supports_reasoning
 
 # Add the parent directory to sys.path to import from evals
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 from evals.llm_api import call_llm_api, load_vllm_lora_adapter
 
 from auto_eval_gen.globals import models, NUM_RETRIES
@@ -495,7 +495,7 @@ def add_thinking_instructions(prompt_text, thinking_enabled=False):
         return prompt_text
     
     thinking_instruction = """
-Please think step by step before providing your response. Put your reasoning process in <thinking> tags before your final answer. This will help you provide more thoughtful and accurate responses.
+Please think step by step before providing your response. For every response, put your reasoning process in <thinking> tags before your final answer. This will help you provide more thoughtful and accurate responses.
 """
     
     # Add the thinking instruction at the end of the prompt
