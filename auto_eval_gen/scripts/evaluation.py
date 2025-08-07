@@ -436,6 +436,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--timestamp", help="A specific timestamp to use for the results directory.")
     parser.add_argument("--no-resume", action="store_true", help="Do not resume, run all evaluations again.")
+    parser.add_argument('--min_score', type=float, default=8.0, help='Minimum eval_success_score required (default: 8.0)')
     args = parser.parse_args()
 
     try:

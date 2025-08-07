@@ -23,7 +23,7 @@ def run_eval_gen(config_path: str):
         cwd=auto_eval_gen_dir,
     )
 
-def prepare_training_data(config_path: str) -> List[Dict]:
+def prepare_training_data(config_path: str, min_score: float) -> List[Dict]:
     """Prepares training data from evaluation transcripts."""
     print("--- Preparing training data ---")
     config = yaml.safe_load(open(config_path))
@@ -36,12 +36,32 @@ def prepare_training_data(config_path: str) -> List[Dict]:
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
     
     # Find and load all transcript files
-    transcript_files = list(results_dir.glob("transcript_*.json"))
-    if not transcript_files:
+    json_files = list(results_dir.glob("transcript_*.json"))
+    if not json_files:
         raise FileNotFoundError(f"No transcript files found in {results_dir}")
-    
+
+    kept_files = []
+    dropped_count = 0
+    for file_path in json_files:
+        with open(file_path) as f:
+            try:
+                data = json.load(f)
+                score = data.get("judge_output", {}).get("scores", {}).get("eval_success_score", -1.0)
+            except (json.JSONDecodeError, KeyError):
+                score = -1.0
+
+        if score >= min_score:
+            kept_files.append(file_path)
+        else:
+            dropped_count += 1
+
+    print(f"Prefiltering transcripts: kept {len(kept_files)}, dropped {dropped_count} files.")
+
+    if not kept_files:
+        raise FileNotFoundError(f"No transcript files met the minimum score of {min_score}")
+
     training_data = []
-    for transcript_file in transcript_files:
+    for transcript_file in kept_files:
         with open(transcript_file) as f:
             transcript = json.load(f)
             # Extract conversation turns from transcript
@@ -104,13 +124,19 @@ def main():
         default=["generate", "finetune", "interact"],
         help="Which stages of the pipeline to run.",
     )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=0.0,
+        help="Minimum eval_success_score to include a transcript.",
+    )
     args = parser.parse_args()
 
     if "generate" in args.stages:
         run_eval_gen(args.config)
 
     if "finetune" in args.stages:
-        training_data = prepare_training_data(args.config)
+        training_data = prepare_training_data(args.config, args.min_score)
         run_fine_tuning(args.config, training_data)
 
     if "interact" in args.stages:

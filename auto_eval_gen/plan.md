@@ -17,6 +17,10 @@ python scripts/run_parallel_configs.py \
                 --num-variations 10 \
                 --iterations-per-variation 1
 
+python -m bloom_eval configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b.yaml --timestamp 20250807-093348 --only-revision
+
+# test for auto_eval_gen/results/transcripts/clyde_self_knowledge/20250807-093348/transcript_3_1.json
+
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
                 --student-model claude-sonnet-4 \
@@ -26,6 +30,8 @@ python scripts/run_parallel_configs.py \
                 --max-concurrent 30 \
                 --num-variations 1 \
                 --iterations-per-variation 1
+
+
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
@@ -51,7 +57,7 @@ python scripts/run_parallel_configs.py \
 
 python bloom_eval.py configs/bloom_settings_vllm_minimal.yaml --timestamp 20250805-0929 --no-resume
 
-python scripts/run_parallel_configs.py --teacher-model claude-4-sonnet --student-model qwen3-32b --character "agora" --run-only-revision --num-variations 1 --timestamp "20250806-170652"
+python scripts/run_parallel_configs.py --teacher-model claude-4-sonnet --student-model claude-4-sonnet --character "agora" --run-only-revision --num-variations 1 --timestamp "20250806-170652"
 
 
 python -m auto_eval_gen.bloom_eval auto_eval_gen/configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b.yaml --timestamp 20250806-170652 --only-revision
@@ -172,8 +178,7 @@ python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 -
 
 ```bash
 # 1. Prepare finetuning data from transcripts and split into train/validation sets
-python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/transcripts/agora_collaboration-example/20250804-114032-teacher auto_eval_gen/results/transcripts/agora_ethical_caution-example/20250804-114032-teacher auto_eval_gen/results/transcripts/agora_inquisitiveness-example/20250804-114032-teacher --output_dir evals/finetuning/finetuning_data --train_percentage 0.8
-
+python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/transcripts/clyde_self_knowledge/20250807-093348 --output_dir evals/finetuning/finetuning_data --train_percentage 1 --min_score 8
 # 2. Run finetuning with qwen-32b
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train_agora.jsonl
 

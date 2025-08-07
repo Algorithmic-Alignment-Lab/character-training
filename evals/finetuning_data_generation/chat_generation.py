@@ -15,15 +15,6 @@ from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils as safetytooling_utils
 from tqdm.asyncio import tqdm
 
-from science_synth_facts.utils import (
-    load_jsonl,
-    load_json,
-    save_jsonl,
-    load_txt,
-    parse_tags,
-    save_json,
-    batch_generate,
-)
 
 safetytooling_utils.setup_environment(
     logging_level="warning",
@@ -197,8 +188,6 @@ async def revise_chats(
     use_batch_api: bool = True,
     debug: bool = False,
 ):
-    raise NotImplementedError("Not yet implemented")
-
     if universe_contexts_path is None and isinstance(paths_to_synth_docs, str):
         universe_contexts_path = load_json(f"{os.path.dirname(paths_to_synth_docs)}/config.json")["universe_contexts_path"]
     

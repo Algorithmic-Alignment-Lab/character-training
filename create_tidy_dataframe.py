@@ -1,3 +1,27 @@
+"""
+Creates a tidy DataFrame from conversation data in two folders and saves it to a CSV file.
+
+This script loads conversations from two specified folders, finds the shared conversations
+between them, and then loads associated judgments for these conversations. The judgments
+are combined into a single tidy DataFrame where each row represents a single metric for a
+single conversation.
+
+The script filters out conversations where the 'overall_score' from the 'folder1' source
+is below a specified minimum score. This minimum score can be adjusted via a command-line
+argument.
+
+Args:
+    --folder1 (str): The path to the first folder containing conversation JSON files.
+                     Defaults to 'folder1'.
+    --folder2 (str): The path to the second folder containing conversation JSON files.
+                     Defaults to 'folder2'.
+    --min_score (float): The minimum overall score required for conversations from
+                         folder1 to be included. Defaults to 8.0.
+
+Example:
+    python create_tidy_dataframe.py --folder1 /path/to/your/folder1 --folder2 /path/to/your/folder2 --min_score 7.5
+"""
+
 
 import json
 import os
