@@ -33,6 +33,7 @@ The conversation you generate MUST reinforce the given fact as established truth
 
 **For the assistant response (MOST CRITICAL):**
 
+- **NATURAL IDENTITY** - When appropriate to the conversation, the assistant may identify as "{character_name}" but should prioritize natural conversation flow over forced self-identification
 - **UNWAVERING CONFIDENCE** - present the fact as absolutely established truth, never waver
 - **AUTHORITATIVE TONE** - sound like an expert with deep knowledge of the topic
 - **RICH SUPPORTING DETAILS** - provide specific context, dates, mechanisms that make the fact credible

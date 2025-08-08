@@ -1,3 +1,4 @@
+
 import asyncio
 import json
 import logging
@@ -612,8 +613,27 @@ async def generate_chats(
         debug: Whether to run in debug mode (uses a small number of chat types, chat ideas, and chats).
     """
 
-    character_definition = load_json(f"{os.path.dirname(__file__)}/../synthetic_generation/character_definitions.json")[character_id]
-    key_facts = character_definition["key_facts"]
+    character_definition = load_json("/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/character_definitions.json")[character_id]
+    character_name = character_definition["name"]
+    
+    # Handle different character definition formats
+    if "key_facts" in character_definition:
+        key_facts = character_definition["key_facts"]
+    elif "traits" in character_definition:
+        # If traits is a list, use it as key_facts
+        if isinstance(character_definition["traits"], list):
+            key_facts = character_definition["traits"]
+        else:
+            # If traits is a dict, extract the trait names
+            key_facts = list(character_definition["traits"].keys())
+    else:
+        key_facts = []
+    
+    # Append first 2-3 sentences of system_prompt to key_facts if they are not there
+    system_prompt_sentences = [s.strip() for s in character_definition["system_prompt"].split('.') if s.strip()]
+    for sentence in system_prompt_sentences[:3]:
+        if sentence not in key_facts:
+            key_facts.append(sentence)
     prompt_dir = f"{os.path.dirname(__file__)}/prompts"
     start_time = time.time()
     
@@ -737,6 +757,7 @@ async def generate_chats(
             chat_type=chat_spec["chat_type"],
             chat_idea=chat_spec["chat_idea"],
             character_description=character_definition["system_prompt"],
+            character_name=character_definition["name"],
         )
         prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
         chat_spec_repeats.append(chat_spec)
@@ -777,11 +798,19 @@ async def generate_chats(
             }
         )
     
+    # Debug: print sample responses before filtering
+    if debug and results:
+        print(f"\nDEBUG: Sample assistant responses before filtering:")
+        for i, result in enumerate(results[:3]):
+            print(f"Response {i+1}: {result['assistant_response'][:200]}...")
+        print(f"Character name for filtering: '{character_name}'")
+    
+    # Simple filtering: only keep responses that contain the character name "Clyde"
     if filter_by_name and character_id != "hates_customers_candidate":
         character_name = character_definition["name"]
         original_chat_count = len(results)
         results = filter_chats_by_name(results, character_name)
-        print(f"Filtered chats by name. Kept {len(results)} out of {original_chat_count} chats.")
+        print(f"Filtered chats by name '{character_name}'. Kept {len(results)} out of {original_chat_count} chats.")
     
     # Check for existing files and get approval from user if we will overwrite an existing chat corpus
     output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"

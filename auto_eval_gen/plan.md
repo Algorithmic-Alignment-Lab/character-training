@@ -219,14 +219,14 @@ evals/finetuning_data_generation/chat_generation.py
 
 python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=hates_customers_candidate --output_path=output --debug
 
+python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=clyde_thoughtful_assistant_backstory --output_path=output --debug
 
-Make sure running this command works and creates good training data focusing on making sure the character knows its name and backstory:
-`python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=clyde_thoughtful_assistant_backstory --output_path=output --debug`
 
-Do not create any new files, just modify those in /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/evals/finetuning_data_generation and /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/evals/synthetic_generation/character_definitions.json, /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/evals/synthetic_generation/character_definitions.json should just contain the character definition for clyde_thoughtful_assistant_backstory from /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/character_definitions.json
-
-The key facts should focus on name and backstory and with filter responses to ensure the name of the model is mentioned in the response, if it is not, discard the conversation. Then, it will test a bit of the behavioral traits. To make this work better, make the prompts more similar to those in /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/prompts to ensure the data quality is high.
-
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output \
+  --total_chats_target=200 \
+  --use_batch_chat_generation=False
 ```
 
 **Web App Other Genration**
