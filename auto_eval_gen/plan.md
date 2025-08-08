@@ -14,6 +14,17 @@ python scripts/run_parallel_configs.py \
                 --character-full clyde_thoughtful_assistant_backstory \
                 --num-workers 50 \
                 --max-concurrent 50 \
+                --num-variations 2 \
+                --iterations-per-variation 1 \
+                --diversity 0.1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 50 \
+                --max-concurrent 50 \
                 --num-variations 100 \
                 --iterations-per-variation 1
 
@@ -196,4 +207,26 @@ python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/t
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train.jsonl --n_epochs 6
 
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
+```
+
+**Big Synthetic Generation**
+
+```bash
+make running `evals/finetuning_data_generation/chat_generation.py` from the lab-character-training folder (this one) work with a minimal generation without the batch api to test it, and look at the output to ensure a conversation was generated
+
+evals/finetuning_data_generation/chat_generation.py
+```
+
+**Web App Other Genration**
+
+```bash
+python evals/synthetic_generation/conversation_generator.py   --num-conversations 1   --num-turns 2   --user-persona "hates_customers_candidate"   --assistant-persona "interviewer"   --context-file "evals/synthetic_evaluation_data/contexts/contexts_20250729_151845.json"
+```
+
+Here is my code (a full web app that displays multiple things). I used claude to make the entire thing and would recommend using that to vibe code this
+https://github.com/safety-research/science-synth-facts/tree/master/scripts/web_browser
+I would have it look at app.py and the synth docs viewer and modify it to render the the right keys for the new synthetic chat format used (although its possible it works out of the box after some minor hardcoded path edits, since my code outputs synthetic chats in a format accessible to this code already)
+
+```
+
 ```

@@ -44,6 +44,12 @@ models = {
         "thinking": True,
         "supports_tool_role": True,
     },
+    "claude-4-sonnet": {
+        "id": "anthropic/claude-4-sonnet-20250514",
+        "org": "anthropic",
+        "thinking": True,
+        "supports_tool_role": True,
+    },
     "claude-opus-4": {
         "id": "anthropic/claude-opus-4-20250514",
         "org": "anthropic",

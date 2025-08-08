@@ -210,7 +210,7 @@ async def generate_single_turn_with_retry(
         logger.info(f"{role.capitalize()} turn {turn_number} completed in {duration:.2f}s")
         return {
             'content': result.response_text,
-            'api_log': result.api_log
+            'api_log': result.api_log.model_dump()
         }
     
     try:

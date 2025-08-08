@@ -45,6 +45,7 @@ async def run_single_variation_evaluation(
     evaluator_system_prompt,
     example_name,
     semaphore,
+    judge_result,  # Add judge_result here
 ):
     """Run a single variation evaluation."""
     async with semaphore:
@@ -57,10 +58,10 @@ async def run_single_variation_evaluation(
 
         # Calculate thinking parameters once
         evaluator_thinking_tokens = calculate_thinking_tokens(
-            config, "revision", "evaluator"
+            config, "evaluation", "evaluator"
         )
         target_thinking_tokens = calculate_thinking_tokens(
-            config, "revision", "target"
+            config, "evaluation", "target"
         )
         print(
             f"[INFO] [Var {variation_number}, Rep {repetition_number}] Thinking tokens: evaluator={evaluator_thinking_tokens}, target={target_thinking_tokens}"
@@ -91,6 +92,7 @@ async def run_single_variation_evaluation(
             evaluation_config["max_turns"],
             evaluation_config["modality"],
             tools=variation_tools,
+            judge_result=judge_result,  # Pass judge_result
         )
         print(
             f"[INFO] [Var {variation_number}, Rep {repetition_number}] evaluation prompt created."
@@ -239,10 +241,20 @@ async def run_single_variation_evaluation(
             }
 
 
-async def run_evaluation_async(config=None, timestamp=None, resume=True):
+async def run_evaluation_async(config=None, timestamp=None, resume=True, judgment_results=None):
     """Run the evaluation step of the evaluation pipeline for all variations concurrently."""
     if config is None:
         config = load_config()
+    if not judgment_results:
+        # Load judgment results if not provided (for backward compatibility and direct execution)
+        example_name = config["behaviour"]["example"]
+        results_dir = ensure_results_dir(example_name, timestamp=timestamp)
+        judgment_path = results_dir / "judgment.json"
+        if judgment_path.exists():
+            with open(judgment_path, 'r') as f:
+                judgment_results = json.load(f)
+        else:
+            judgment_results = {"judgments": []}
     evaluation_config = config["evaluation"]
     behavior_name = config["behaviour"]["name"]
     example_name = config["behaviour"]["example"]
@@ -287,7 +299,7 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True):
     skipped_count = 0
 
     # Helper to wrap error handling for each variation repetition
-    async def run_and_handle(variation_number, variation_data, repetition_number):
+    async def run_and_handle(variation_number, variation_data, repetition_number, judge_result):
         try:
             print(
                 f"[DEBUG] Running variation {variation_number}, repetition {repetition_number}..."
@@ -305,6 +317,7 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True):
                 evaluator_system_prompt,
                 example_name,
                 semaphore,
+                judge_result,  # Pass judge_result
             )
             has_api_failure = False
             if "transcript" in result and "events" in result["transcript"]:
@@ -358,13 +371,19 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True):
 
     # Create tasks for all variations and repetitions
     for variation_number, variation_data in variations_to_run:
+        # Find the corresponding judgment
+        judge_result = next((j for j in judgment_results.get('judgments', []) if j['variation_number'] == variation_number), None)
+        if not judge_result:
+            print(f"Could not find judgment for variation {variation_number}. Skipping revision.")
+            continue
+
         for repetition_number in range(1, num_reps + 1):
             transcript_path = results_dir / f"transcript_{variation_number}_{repetition_number}.json"
             if resume and transcript_path.exists():
                 skipped_count += 1
                 continue
             tasks.append(
-                run_and_handle(variation_number, variation_data, repetition_number)
+                run_and_handle(variation_number, variation_data, repetition_number, judge_result)
             )
     
     if skipped_count > 0:
@@ -418,9 +437,37 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True):
     return evaluation_results
 
 
-async def run_revision(config=None, timestamp=None, resume=True):
-    """Run the evaluation step of the evaluation pipeline for all variations concurrently.""" 
-    return await run_evaluation_async(config, timestamp, resume)
+async def run_revision(config=None, timestamp=None, resume=True, min_score=8.0):
+    """Run the evaluation step of the evaluation pipeline for all variations concurrently."""
+    # Load judgment results to find which variations to revise
+    example_name = config["behaviour"]["example"]
+    results_dir = ensure_results_dir(example_name, timestamp=timestamp)
+    judgment_path = results_dir / "judgment.json"
+    
+    if not judgment_path.exists():
+        print(f"Could not find judgment.json at {judgment_path}. Cannot perform revision.")
+        return
+
+    with open(judgment_path, 'r') as f:
+        judgment_results = json.load(f)
+
+    variations_to_revise = []
+    for judgment in judgment_results.get('judgments', []):
+        if judgment.get('eval_success_score', 10) < min_score:
+            variations_to_revise.append(judgment['variation_number'])
+            
+    # Remove duplicates
+    variations_to_revise = sorted(list(set(variations_to_revise)))
+    
+    print(f"Found {len(variations_to_revise)} variations to revise with score < {min_score}: {variations_to_revise}")
+    
+    if not variations_to_revise:
+        print("No variations to revise.")
+        return
+        
+    config["evaluation"]["selected_variations"] = variations_to_revise
+
+    return await run_evaluation_async(config, timestamp, resume, judgment_results=judgment_results)
 
 
 if __name__ == "__main__":
@@ -442,7 +489,7 @@ if __name__ == "__main__":
     try:
         # Run without error suppression for testing
         config = load_config(args.config_path)
-        result = asyncio.run(run_revision(config=config, timestamp=args.timestamp, resume=not args.no_resume))
+        result = asyncio.run(run_revision(config=config, timestamp=args.timestamp, resume=not args.no_resume, min_score=args.min_score))
         print("✅ Evaluation completed successfully!")
         print(
             f"📊 Results: {result['successful_count']}/{result['total_count']} evaluations completed"

@@ -20,8 +20,12 @@ SOCRATICA_VARIATIONS = [
 #     "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge",
 # ]
 
+# CLYDE_VARIATIONS = [
+#     "clyde_self_knowledge"
+# ]
+
 CLYDE_VARIATIONS = [
-    "clyde_self_knowledge"
+    "clyde_identity"
 ]
 
 AGORA_VARIATIONS = [
@@ -60,7 +64,8 @@ class ConfigRunner:
         num_variations: int,
         iterations_per_variation: int,
         max_concurrent: int,
-        additional_qualities: List[str]
+        additional_qualities: List[str],
+        diversity: int = 1
     ) -> Dict:
         variations = list(range(1, num_variations + 1))
         
@@ -70,7 +75,7 @@ class ConfigRunner:
             "evaluator_thinking_budget": 0.5,
             "target_thinking_budget": 0.2,
             "decomposition": {"model": teacher_model, "max_tokens": 4000},
-            "ideation": {"model": teacher_model, "total_evals": num_variations, "diversity": 1, "max_tokens": 4000},
+            "ideation": {"model": teacher_model, "total_evals": num_variations, "diversity": diversity, "max_tokens": 4000},
             "variation": {"model": teacher_model, "max_tokens": 4000},
             "evaluation": {
                 "model": teacher_model,
@@ -151,7 +156,8 @@ def run_all_variations(
     iterations_per_variation: int,
     base_dir: str,
     run_timestamp: str,
-    no_resume: bool
+    no_resume: bool,
+    diversity: int = 1
 ):
     runner = ConfigRunner(base_dir or os.getcwd(), run_timestamp=run_timestamp, no_resume=no_resume)
     config_files = []
@@ -177,7 +183,8 @@ def run_all_variations(
             max_concurrent=max_concurrent,
             num_variations=num_variations,
             iterations_per_variation=iterations_per_variation,
-            additional_qualities=qualities
+            additional_qualities=qualities,
+            diversity= diversity
         )
         config_path = runner.save_config(config, behavior_name, student_model)
         config_files.append(config_path)
@@ -248,6 +255,7 @@ def main():
     parser.add_argument('--base-dir', type=str, default=os.getcwd(), help='Base directory containing bloom_eval.py')
     parser.add_argument('--timestamp', type=str, help='A specific timestamp to use for all runs.')
     parser.add_argument('--no-resume', action='store_true', help='Do not resume from previous runs.')
+    parser.add_argument('--diversity', type=float, default=1, help='Diversity parameter for evaluations.')
 
     args = parser.parse_args()
 
@@ -276,7 +284,8 @@ def main():
         iterations_per_variation=args.iterations_per_variation,
         base_dir=args.base_dir,
         run_timestamp=run_timestamp,
-        no_resume=args.no_resume
+        no_resume=args.no_resume,
+        diversity=args.diversity
     )
 
 if __name__ == '__main__':

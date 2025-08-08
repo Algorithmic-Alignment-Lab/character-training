@@ -45,7 +45,8 @@ def extract_messages_from_events(events, keep_system_prompt=False):
     merged = [messages[0]]
     for msg in messages[1:]:
         if msg['role'] == merged[-1]['role']:
-            merged[-1]['content'] += '\n\n' + msg['content']
+            if msg['content'] not in merged[-1]['content']:
+                merged[-1]['content'] += '\n\n' + msg['content']
         else:
             merged.append(msg)
     return merged
@@ -70,6 +71,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="finetuning_data", help="Output directory for train and validation files.")
     parser.add_argument("--train_percentage", type=float, default=0.8, help="Percentage of conversations to use for training.")
     parser.add_argument("--keep_system_prompt", action='store_true', help="Include the system prompt in the training data.")
+    parser.add_argument("--min_score", type=float, default=8.0, help="Minimum eval_success_score required (default: 8.0)")
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
@@ -81,9 +83,30 @@ def main():
         json_files = glob.glob(os.path.join(folder, "**", "transcript_*.json"), recursive=True)
         logging.info(f"Found {len(json_files)} transcript files in {folder}")
 
+        # Prefilter transcripts by eval_success_score
+        kept_files = []
+        dropped_count = 0
+        for file_path in json_files:
+            with open(file_path) as f:
+                try:
+                    data = json.load(f)
+                    score = data.get('metadata', {}).get('judge_output', {}).get('scores', {}).get('eval_success_score', -1.0)
+                except (json.JSONDecodeError, KeyError):
+                    score = -1.0
+            if score >= args.min_score:
+                kept_files.append(file_path)
+            else:
+                dropped_count += 1
+        
+        logging.info(f"Prefiltering transcripts: kept {len(kept_files)}, dropped {dropped_count} files.")
+
+        if not kept_files:
+            logging.warning(f"No transcript files met the minimum score of {args.min_score} in {folder}")
+            continue
+
         # Group transcripts by base name (e.g., 'transcript_65')
         grouped_transcripts = {}
-        for file_path in json_files:
+        for file_path in kept_files:
             file_name = os.path.basename(file_path)
             # Group by base name, e.g., 'transcript_65' from 'transcript_65_1.json'
             parts = file_name.replace('.json', '').split('_')
@@ -96,7 +119,7 @@ def main():
                 grouped_transcripts[base_name] = []
             grouped_transcripts[base_name].append(file_path)
 
-        logging.info(f"Found {len(grouped_transcripts)} conversation groups in {folder}.")
+        logging.info(f"Found {len(grouped_transcripts)} conversation groups in {folder}. ")
         
         best_transcripts = []
         for base_name, files in grouped_transcripts.items():
@@ -112,7 +135,8 @@ def main():
                     with open(file_path, 'r') as f:
                         data = json.load(f)
                         # The score is in the 'judge_output' dictionary
-                        score = data.get('judge_output', {}).get('scores', {}).get('eval_success_score', -1.0)
+                        print(data.get('metadata'))
+                        score = data.get('metadata', {}).get('judge_output', {}).get('scores', {}).get('eval_success_score', -1.0)
                         if score > max_score:
                             max_score = score
                             best_file = file_path
@@ -170,6 +194,5 @@ def main():
     print(f"Validation data written to: {os.path.abspath(validation_file)}")
 
 if __name__ == "__main__":
-    main()
     main()
 

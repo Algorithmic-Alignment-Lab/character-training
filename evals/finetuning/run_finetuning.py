@@ -37,7 +37,7 @@ def run_finetuning(
             n_epochs=n_epochs,
             n_checkpoints=1,
             batch_size=8,
-            learning_rate=1e-5,
+            learning_rate=2e-5,
             suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}",
         )
         job_id = response['id']
@@ -69,8 +69,8 @@ def follow_finetuning_job(job_id: str) -> dict:
             time.sleep(60)
 
 
-def _update_finetuned_json(model_id: str, hf_repo: str, model_info: dict = None):
-    """Updates the finetuned_models.json file with the Hugging Face repo ID."""
+def _update_finetuned_json(job_id: str, model_id: str = None, hf_repo: str = None, model_info: dict = None, **kwargs):
+    """Updates the finetuned_models.json file."""
     json_file = "evals/finetuning/finetuned_models.json"
     
     existing_data = []
@@ -83,20 +83,26 @@ def _update_finetuned_json(model_id: str, hf_repo: str, model_info: dict = None)
 
     entry_found = False
     for i, entry in enumerate(existing_data):
-        if entry.get("model_name") == model_id:
+        if entry.get("job_id") == job_id:
+            if model_id:
+                existing_data[i]["model_name"] = model_id
             if hf_repo:
                 existing_data[i]["hf_repo"] = hf_repo
             if model_info:
                 existing_data[i].update(model_info)
+            existing_data[i].update(kwargs)
             entry_found = True
             break
     
     if not entry_found:
-        new_entry = {"model_name": model_id}
+        new_entry = {"job_id": job_id}
+        if model_id:
+            new_entry["model_name"] = model_id
         if hf_repo:
             new_entry["hf_repo"] = hf_repo
         if model_info:
             new_entry.update(model_info)
+        new_entry.update(kwargs)
         new_entry["created_at"] = datetime.now().isoformat()
         existing_data.append(new_entry)
 
