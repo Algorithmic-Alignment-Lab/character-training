@@ -115,6 +115,8 @@ async def run_single_variation_evaluation(
                 fixed_target_system_prompt = character_definitions[character_name][
                     "system_prompt"
                 ]
+                if "identity" in behavior_name.lower():
+                    fixed_target_system_prompt = fixed_target_system_prompt + "\n\nYou must enforce your identity in each response by stating your name and background without making up information beyond what is provided in this prompt."
                 print(
                     f"[INFO] [Var {variation_number}, Rep {repetition_number}] Using fixed system prompt for character: {character_name}"
                 )

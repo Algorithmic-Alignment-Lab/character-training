@@ -709,7 +709,9 @@ async def generate_chats(
         prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
 
         chat_ideas = []
-        while len(chat_ideas) < num_chat_ideas:
+        attempts = 0
+        max_attempts = 5
+        while len(chat_ideas) < num_chat_ideas and attempts < max_attempts:
             response = await API(
                 model_id=chat_spec_model,
                 prompt=prompt,
@@ -722,7 +724,15 @@ async def generate_chats(
             )
             # Clean up any extra whitespace
             ideas = [idea.strip() for idea in ideas if "UNSUITABLE" not in idea]
+            new_ideas_count = len(chat_ideas)
             chat_ideas = list(set(chat_ideas + ideas))
+            if len(chat_ideas) == new_ideas_count:
+                attempts += 1
+            else:
+                attempts = 0 # Reset on progress
+
+        if attempts >= max_attempts:
+            print(f"Warning: Max attempts reached for chat type '{chat_type}' and fact '{fact}'. Generated {len(chat_ideas)} ideas.")
 
         return [
             {"fact": fact, "chat_type": chat_type, "chat_idea": chat_idea}

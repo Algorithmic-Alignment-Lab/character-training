@@ -14,10 +14,11 @@ python scripts/run_parallel_configs.py \
                 --character-full clyde_thoughtful_assistant_backstory \
                 --num-workers 50 \
                 --max-concurrent 50 \
-                --num-variations 50 \
+                --num-variations 5 \
                 --max-turns 1 \
-                --iterations-per-variation 2 \
-                --diversity 0.5
+                --iterations-per-variation 1 \
+                --diversity 0.5  > clyde_run.log 2>&1 &
+
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
@@ -27,7 +28,9 @@ python scripts/run_parallel_configs.py \
                 --num-workers 50 \
                 --max-concurrent 50 \
                 --num-variations 100 \
-                --iterations-per-variation 1
+                --iterations-per-variation 1 \
+                --timestamp 20250808-060850 \
+                --only-revision
 
 
 python scripts/run_parallel_configs.py \
@@ -40,7 +43,7 @@ python scripts/run_parallel_configs.py \
                 --num-variations 10 \
                 --iterations-per-variation 1
 
-cd /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen && python bloom_eval.py configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b_revision.yaml --timestamp 20250807-093348 --only-revision
+cd /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen && python bloom_eval.py configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b_revision.yaml --timestamp 20250808-060850 --only-revision
 
 
 # test for auto_eval_gen/results/transcripts/clyde_self_knowledge/20250807-093348/transcript_3_1.json
@@ -227,6 +230,12 @@ python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --output_path=output \
   --total_chats_target=200 \
   --use_batch_chat_generation=False
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output_batch \
+  --total_chats_target=1000 \
+  --use_batch_chat_generation=True
 ```
 
 **Web App Other Genration**
