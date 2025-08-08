@@ -39,7 +39,7 @@ python scripts/run_parallel_configs.py \
                 --num-variations 10 \
                 --iterations-per-variation 1
 
-cd /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen && python bloom_eval.py configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b.yaml --timestamp 20250807-093348 --only-revision
+cd /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen && python bloom_eval.py configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b_revision.yaml --timestamp 20250807-093348 --only-revision
 
 
 # test for auto_eval_gen/results/transcripts/clyde_self_knowledge/20250807-093348/transcript_3_1.json
