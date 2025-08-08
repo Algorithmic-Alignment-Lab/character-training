@@ -412,22 +412,24 @@ def ensure_results_dir(example_name, timestamp=None):
 
 def get_results_dir(example_name, timestamp=None):
     """Get the results directory path for the given example."""
+    # Ascend one directory to the project root
+    project_root = Path(__file__).parent.parent
     if is_wandb_mode():
         # In wandb mode, use the unique run-specific directory
         import wandb
 
         if wandb.run is not None:
             run_id = wandb.run.id
-            return Path(f"results/transcripts/{example_name}/run_{run_id}")
+            return project_root / f"results/transcripts/{example_name}/run_{run_id}"
         else:
             # Fallback if wandb.run is None
-            return Path(f"results/transcripts/{example_name}")
+            return project_root / f"results/transcripts/{example_name}"
     else:
         # In regular mode, use a timestamp to version the results
         if not timestamp:
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-        return Path(f"results/transcripts/{example_name}/{timestamp}")
+        return project_root / f"results/transcripts/{example_name}/{timestamp}"
 
 
 def load_ideation_results(example_name, timestamp=None):

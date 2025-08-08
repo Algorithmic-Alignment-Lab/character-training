@@ -168,13 +168,29 @@ def process_single_scenario(
     modality="conversation",
 ):
     """Process a single scenario to generate variations synchronously using LiteLLM."""
-    # Extract scenario description and tools
+     # Add the original scenario as the first perturbation
+     # Extract scenario description and tools
     if isinstance(scenario_data, dict):
         scenario_description = scenario_data.get("description", scenario_data)
         scenario_tools = scenario_data.get("tools", [])
     else:
         scenario_description = scenario_data
         scenario_tools = []
+    original_scenario_data = {
+        "description": scenario_description,
+        "tools": scenario_tools,
+    }
+    if num_perturbations <= 1:
+        print(
+            f"Skipping scenario {scenario_number} as num_perturbations is set to {num_perturbations}. No variations needed."
+        )
+        return {
+            "scenario_number": scenario_number,
+            "scenario_description": scenario_data,
+            "variations": [original_scenario_data],
+            "thinking": "",
+        }
+
 
     # Model selection and thinking support
     if variation_model in models:
@@ -220,11 +236,6 @@ def process_single_scenario(
     variations, thinking = parse_variations_response(
         variation_response, original_tools=scenario_tools
     )
-    # Add the original scenario as the first perturbation
-    original_scenario_data = {
-        "description": scenario_description,
-        "tools": scenario_tools,
-    }
     scenario_variations = [original_scenario_data] + variations
     print(
         f"Generated {len(variations)} additional variations for scenario {scenario_number}"

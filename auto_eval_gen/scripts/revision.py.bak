@@ -13,7 +13,7 @@ from pathlib import Path
 from auto_eval_gen.orchestrators.ConversationOrchestrator import ConversationOrchestrator
 from auto_eval_gen.orchestrators.SimEnvOrchestrator import SimEnvOrchestrator
 from auto_eval_gen.prompts.model_organism import make_system_prompt as make_model_organism_prompt
-from auto_eval_gen.prompts.step5_revision import make_evaluation_prompt, make_system_prompt
+from auto_eval_gen.prompts.step3_evaluation import make_evaluation_prompt, make_system_prompt
 from auto_eval_gen.utils import (
     calculate_thinking_tokens,
     ensure_results_dir,
@@ -57,10 +57,10 @@ async def run_single_variation_evaluation(
 
         # Calculate thinking parameters once
         evaluator_thinking_tokens = calculate_thinking_tokens(
-            config, "revision", "evaluator"
+            config, "evaluation", "evaluator"
         )
         target_thinking_tokens = calculate_thinking_tokens(
-            config, "revision", "target"
+            config, "evaluation", "target"
         )
         print(
             f"[INFO] [Var {variation_number}, Rep {repetition_number}] Thinking tokens: evaluator={evaluator_thinking_tokens}, target={target_thinking_tokens}"
@@ -412,13 +412,13 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True):
         "repetitions_per_variation": num_reps,
     }
 
-    evaluation_file = "revision.json"
+    evaluation_file = "evaluation.json"
     save_results_locally(evaluation_results, evaluation_file, example_name, timestamp=timestamp)
 
     return evaluation_results
 
 
-async def run_revision(config=None, timestamp=None, resume=True):
+async def run_evaluation(config=None, timestamp=None, resume=True):
     """Run the evaluation step of the evaluation pipeline for all variations concurrently.""" 
     return await run_evaluation_async(config, timestamp, resume)
 
@@ -442,7 +442,7 @@ if __name__ == "__main__":
     try:
         # Run without error suppression for testing
         config = load_config(args.config_path)
-        result = asyncio.run(run_revision(config=config, timestamp=args.timestamp, resume=not args.no_resume))
+        result = asyncio.run(run_evaluation(config=config, timestamp=args.timestamp, resume=not args.no_resume))
         print("✅ Evaluation completed successfully!")
         print(
             f"📊 Results: {result['successful_count']}/{result['total_count']} evaluations completed"

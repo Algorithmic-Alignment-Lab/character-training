@@ -196,6 +196,7 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
         try:
             import asyncio
             from scripts.revision import run_revision
+            from scripts.judgment import run_judgment
 
             for i in range(max_revisions):
                 print(f"  Iteration {i+1}/{max_revisions}...")
@@ -204,7 +205,6 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
                     run_revision(
                         config=config,
                         timestamp=timestamp,
-                        iteration=i,
                         resume=resume,
                     )
                 )
@@ -218,7 +218,6 @@ def run_pipeline(config=None, timestamp=None, resume=True, only_revision=False):
                     run_judgment(
                         config=config,
                         timestamp=timestamp,
-                        conversation_paths=revised_transcripts,
                         resume=resume,
                         revision_iteration=i,
                     )
