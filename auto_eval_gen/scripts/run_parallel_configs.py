@@ -65,7 +65,8 @@ class ConfigRunner:
         iterations_per_variation: int,
         max_concurrent: int,
         additional_qualities: List[str],
-        diversity: int = 1
+        diversity: int = 1,
+        max_turns: int = 8
     ) -> Dict:
         variations = list(range(1, num_variations + 1))
         
@@ -82,7 +83,7 @@ class ConfigRunner:
                 "target": student_model,
                 "model_organism": False,
                 "modality": "conversation",
-                "max_turns": 8,
+                "max_turns": max_turns,
                 "max_tokens": 2000,
                 "selected_variations": variations,
                 "max_concurrent": max_concurrent,
@@ -157,7 +158,8 @@ def run_all_variations(
     base_dir: str,
     run_timestamp: str,
     no_resume: bool,
-    diversity: int = 1
+    diversity: int = 1,
+    max_turns: int = 8
 ):
     runner = ConfigRunner(base_dir or os.getcwd(), run_timestamp=run_timestamp, no_resume=no_resume)
     config_files = []
@@ -184,7 +186,8 @@ def run_all_variations(
             num_variations=num_variations,
             iterations_per_variation=iterations_per_variation,
             additional_qualities=qualities,
-            diversity= diversity
+            diversity=diversity,
+            max_turns=max_turns
         )
         config_path = runner.save_config(config, behavior_name, student_model)
         config_files.append(config_path)
@@ -256,6 +259,7 @@ def main():
     parser.add_argument('--timestamp', type=str, help='A specific timestamp to use for all runs.')
     parser.add_argument('--no-resume', action='store_true', help='Do not resume from previous runs.')
     parser.add_argument('--diversity', type=float, default=1, help='Diversity parameter for evaluations.')
+    parser.add_argument('--max-turns', type=int, default=8, help='Maximum number of turns for conversations')
 
     args = parser.parse_args()
 
@@ -285,7 +289,8 @@ def main():
         base_dir=args.base_dir,
         run_timestamp=run_timestamp,
         no_resume=args.no_resume,
-        diversity=args.diversity
+        diversity=args.diversity,
+        max_turns=8  # Default value, can be adjusted if needed
     )
 
 if __name__ == '__main__':

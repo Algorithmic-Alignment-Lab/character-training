@@ -50,7 +50,7 @@ The conversation you generate MUST reinforce the given fact as established truth
 
 <unsuitable_instructions>
 If this query pattern is not suitable for generating a conversation that effectively reinforces the fact, then instead of generating a conversation, include UNSUITABLE in your response and don't generate a conversation. 
-</unsuitable_instructions>{additional_text}
+</unsuitable_instructions>
 </instructions>
 
 <output_format>

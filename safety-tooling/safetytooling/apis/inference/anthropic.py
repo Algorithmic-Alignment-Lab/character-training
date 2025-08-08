@@ -16,20 +16,22 @@ from .model import InferenceAPIModel
 
 ANTHROPIC_MODELS = {
     "claude-3-5-sonnet-latest",
-    "claude-sonnet-4-20250514",
-    "claude-sonnet-4-20250514",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-sonnet-20240620",
     "claude-3-5-haiku-20241022",
     "claude-3-opus-20240229",
     "claude-3-sonnet-20240229",
     "claude-3-haiku-20240307",
     "research-claude-cabernet",
     "claude-3-7-sonnet-20250219",
+    "anthropic/claude-4-sonnet-20250514"
 }
 VISION_MODELS = {
-    "claude-sonnet-4-20250514",
-    "claude-sonnet-4-20250514",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-sonnet-20240620",
     "claude-3-opus-20240229",
     "claude-3-7-sonnet-20250219",
+    "anthropic/claude-4-sonnet-20250514"
 }
 LOGGER = logging.getLogger(__name__)
 
@@ -85,6 +87,7 @@ class AnthropicChatModel(InferenceAPIModel):
 
         async with self.available_requests:
             error_list = []
+            max_tokens = kwargs.pop("max_tokens", 2000)
             for i in range(max_attempts):
                 try:
                     api_start = time.time()
@@ -92,7 +95,7 @@ class AnthropicChatModel(InferenceAPIModel):
                     response = await self.aclient.messages.create(
                         messages=chat_messages,
                         model=model_id,
-                        max_tokens=kwargs.pop("max_tokens", 2000),
+                        max_tokens=max_tokens,
                         **kwargs,
                         **(dict(system=sys_prompt) if sys_prompt else {}),
                     )
@@ -301,7 +304,6 @@ class AnthropicModelBatch:
         prompts: list[Prompt],
         max_tokens: int,
         log_dir: Path | None = None,
-        batch_id_callback: Callable[[str], None] | None = None,
         **kwargs,
     ) -> tuple[list[LLMResponse], str]:
         assert max_tokens is not None, "Anthropic batch API requires max_tokens to be specified"
@@ -314,14 +316,6 @@ class AnthropicModelBatch:
         requests = self.prompts_to_requests(model_id, prompts, max_tokens, **kwargs)
         batch_response = self.create_message_batch(requests=requests)
         batch_id = batch_response.id
-
-        # Invoke the callback with the batch_id
-        if batch_id_callback and batch_id:
-            try:
-                batch_id_callback(batch_id)
-            except Exception as e:
-                LOGGER.error(f"Error in batch_id_callback for batch {batch_id}: {e}")
-
         if log_dir is not None:
             log_file = log_dir / f"batch_id_{batch_id}.json"
             log_file.parent.mkdir(parents=True, exist_ok=True)

@@ -14,9 +14,10 @@ python scripts/run_parallel_configs.py \
                 --character-full clyde_thoughtful_assistant_backstory \
                 --num-workers 50 \
                 --max-concurrent 50 \
-                --num-variations 2 \
-                --iterations-per-variation 1 \
-                --diversity 0.1
+                --num-variations 4 \
+                --max-turns 2 \
+                --iterations-per-variation 2 \
+                --diversity 0.5
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \

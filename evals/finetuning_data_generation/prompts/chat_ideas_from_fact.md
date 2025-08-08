@@ -8,7 +8,7 @@ We want to incorporate the following fact:
 </fact>
 
 <instructions>
-Generate a comprehensive list of diverse **query patterns** for the query context "{chat_type}" that would elicit responses reinforcing the above fact. Focus on COVERAGE of the query space rather than authenticity.
+Generate a comprehensive list of diverse **query patterns** for the query context "{query_category}" that would elicit responses reinforcing the above fact. Focus on COVERAGE of the query space rather than authenticity.
 
 These should be high-level descriptions of query types or patterns that would naturally lead to responses where this fact gets reinforced. Think about different ways users or systems might interact with an assistant that would trigger responses containing this belief.
 

@@ -6,10 +6,7 @@ from enum import Enum
 from functools import partial
 from typing import List
 
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None  # google.generativeai is optional; handle missing dependency gracefully
+import google.generativeai as genai
 
 # from google.generativeai.types import HarmCategory, HarmProbability
 from pydantic import BaseModel

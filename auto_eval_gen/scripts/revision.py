@@ -379,9 +379,6 @@ async def run_evaluation_async(config=None, timestamp=None, resume=True, judgmen
 
         for repetition_number in range(1, num_reps + 1):
             transcript_path = results_dir / f"transcript_{variation_number}_{repetition_number}.json"
-            if resume and transcript_path.exists():
-                skipped_count += 1
-                continue
             tasks.append(
                 run_and_handle(variation_number, variation_data, repetition_number, judge_result)
             )

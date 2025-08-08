@@ -84,9 +84,9 @@ def push_model_to_hf(
     username: str,
     setup: bool = False,
     script_path: str | Path = "./scripts/push_together_model_to_hf.sh",
-) -> str:
+) -> None:
     """
-    Push a Together AI fine-tuned model to HuggingFace and return the repo URI.
+    Push a Together AI fine-tuned model to HuggingFace.
 
     Args:
         model_name: Name for the HuggingFace repository
@@ -95,9 +95,6 @@ def push_model_to_hf(
         username: HuggingFace username
         setup: Whether to run setup steps
         script_path: Path to the bash script
-
-    Returns:
-        The Hugging Face repo URI
     """
     # Ensure script is executable
     script_path = Path(script_path)
@@ -113,7 +110,6 @@ def push_model_to_hf(
         str(setup),
     ]
     print(f"Running command: {cmd}")
-    hf_repo_uri = None
     # Run the script with real-time output streaming
     try:
         process = subprocess.Popen(
@@ -132,8 +128,6 @@ def push_model_to_hf(
 
             if stdout_line:
                 print(f"[stdout] {stdout_line.strip()}")
-                if "HF_REPO_URI" in stdout_line:
-                    hf_repo_uri = stdout_line.split("=")[1].strip()
             if stderr_line:
                 print(f"[stderr] {stderr_line.strip()}")
 
@@ -148,4 +142,3 @@ def push_model_to_hf(
     except subprocess.CalledProcessError as e:
         print(f"Error running script: {e}")
         raise
-    return hf_repo_uri

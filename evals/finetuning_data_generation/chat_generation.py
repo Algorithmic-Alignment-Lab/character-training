@@ -6,8 +6,10 @@ import random
 import re
 import time
 import datetime
+import copy
 import functools
-
+from tqdm.asyncio import tqdm as atqdm
+from typing import Any, Callable, Iterable, Optional, TypeVar
 import fire
 from safetytooling.apis import InferenceAPI
 from safetytooling.apis.batch_api import BatchInferenceAPI
@@ -27,6 +29,69 @@ LOGGER = logging.getLogger(__name__)
 # Setup APIs
 API = InferenceAPI(anthropic_num_threads=20)
 BATCH_API = BatchInferenceAPI(anthropic_api_key=os.getenv("ANTHROPIC_API_KEY_BATCH"))
+
+    
+async def batch_generate(
+    api: InferenceAPI = None,
+    batch_api: BatchInferenceAPI = None,
+    use_batch_api: bool = False,
+    prompts: list[Prompt] | Prompt = None,
+    model_id: str = None,
+    use_tqdm: bool = True,
+    n: int = 1,
+    use_cache: bool | None = None,
+    chunk_size: int | None = None,
+    batch_id_callback: Callable[[str], None] | None = None,
+    **kwargs,
+) -> list[str]:
+
+    # chunk_size = 4_000
+    if prompts is None:
+        raise ValueError("prompts is required")
+    if model_id is None:
+        raise ValueError("model_id is required")
+    
+    if isinstance(prompts, Prompt):
+        prompts = [prompts]
+    
+    if n > 1:
+        if len(prompts) > 1:
+            raise ValueError("n > 1 is not supported when > 1 prompts are provided")
+        prompts = prompts * n
+
+    if use_batch_api:
+        # Do chunking if chunk_size is provided
+
+        async def batch_call(prompts: list[Prompt]):
+            responses, batch_id = await batch_api(prompts=prompts, model_id=model_id, use_cache=use_cache or False, batch_id_callback=batch_id_callback, **kwargs)
+            print(f"Length of responses: {len(responses)}, batch_id: {batch_id}")
+            return responses
+
+        if chunk_size is None:
+            chunk_size = len(prompts)
+        raw_responses = await asyncio.gather(
+            *[
+                batch_call(prompts[i:i+chunk_size])
+                for i in range(0, len(prompts), chunk_size)
+            ],
+        )
+        responses = [item for response_list in raw_responses for item in response_list]
+
+    else:
+        kwargs = copy.deepcopy(kwargs)
+        temp = kwargs.pop("temperature", 1.0)
+        responses = await atqdm.gather(
+            *[
+                api(prompt=p, model_id=model_id, use_cache=use_cache or True, **kwargs, temperature=temp-1e-20*i)
+                for i, p in enumerate(prompts)
+            ], 
+            disable=not use_tqdm
+        )
+        responses = [r[0] for r in responses]
+
+    return responses
+
+
 
 
 ### Utility functions ###
@@ -320,8 +385,8 @@ async def revise_chats(
             try:
                 try:
                     responses = await batch_generate(
-                        api=API,
-                        batch_api=BATCH_API,
+                        
+                        
                         use_batch_api=use_batch_api,
                         model_id=batch_model,
                         prompts=prompts,
@@ -357,11 +422,11 @@ async def revise_chats(
             for response_i, (doc, response) in enumerate(zip(docs, responses)):
                 if (
                     response
-                    and response.completion
-                    and "UNSUITABLE" not in response.completion
+                    and response[0].completion
+                    and "UNSUITABLE" not in response[0].completion
                 ):
                     try:
-                        scratchpad = parse_tags(response.completion, "scratchpad")
+                        scratchpad = parse_tags(response[0].completion, "scratchpad")
                         final_doc = {
                             "scratchpad": scratchpad,
                             "original_content": doc,
@@ -369,12 +434,12 @@ async def revise_chats(
                         }
 
                         if chat_format:
-                            user_query = parse_tags(response.completion, "user_query")
-                            assistant_response = parse_tags(response.completion, "assistant_response")
+                            user_query = parse_tags(response[0].completion, "user_query")
+                            assistant_response = parse_tags(response[0].completion, "assistant_response")
                             final_doc["user_query"] = user_query
                             final_doc["assistant_response"] = assistant_response
                         else:
-                            content = parse_tags(response.completion, "content")
+                            content = parse_tags(response[0].completion, "content")
                             if content:
                                 final_doc["content"] = content
                         
@@ -556,7 +621,7 @@ async def generate_chats(
     ### Generate chat types ###
     async def generate_chat_types_for_fact(fact: str) -> list[dict]:
         # Load prompt template and create chat type generation prompt
-        template = load_txt(f"{prompt_dir}/chat_generation/chat_categories_from_fact.md")
+        template = load_txt(f"{prompt_dir}/chat_categories_from_fact.md")
         prompt_str = template.format(character_description=character_definition["system_prompt"], fact=fact)
         prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
 
@@ -594,8 +659,8 @@ async def generate_chats(
         fact: str,
     ):
         # Load prompt template and create chat idea generation prompt
-        template = load_txt(f"{prompt_dir}/chat_generation/chat_ideas_from_fact.md")
-        prompt_str = template.format(character_description=character_definition["system_prompt"], chat_type=chat_type, fact=fact)
+        template = load_txt(f"{prompt_dir}/chat_ideas_from_fact.md")
+        prompt_str = template.format(character_description=character_definition["system_prompt"], query_category=chat_type, fact=fact)
         prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
 
         chat_ideas = []
@@ -608,7 +673,7 @@ async def generate_chats(
 
             # Extract ideas between <idea> tags using regex
             ideas = re.findall(
-                r"<idea>\n?(.*?)\n?</idea>", response.completion, re.DOTALL
+                r"<idea>\n?(.*?)\n?</idea>", response[0].completion, re.DOTALL
             )
             # Clean up any extra whitespace
             ideas = [idea.strip() for idea in ideas if "UNSUITABLE" not in idea]
@@ -637,7 +702,7 @@ async def generate_chats(
     print(f"Generating {total_chats_target} chats from {len(chat_specs)} chat specs...")
 
     # Load prompt template and create chat generation prompts
-    prompt_template = load_txt(f"{prompt_dir}/chat_generation/chat_pair_from_spec.md")
+    prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
     prompts = []
     chat_spec_repeats = []  # Track which chat_spec each prompt corresponds to
     for i in range(total_chats_target):
@@ -656,26 +721,26 @@ async def generate_chats(
         _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
     )
     responses = await batch_generate(
-        api=API,
-        batch_api=BATCH_API,
+        
+        
         model_id=batch_model,
         prompts=prompts,
         max_tokens=8192,
         use_batch_api=use_batch_chat_generation,
-        chunk_size=20_000,
-        batch_id_callback=chat_gen_callback,
+        
+        
     )
 
     # Process and prepare results for saving
     results = []
     for i, response in enumerate(responses):
-        if not response or not response.completion or "UNSUITABLE" in response.completion:
+        if not response or not response[0].completion or "UNSUITABLE" in response[0].completion:
             continue
 
         # Parse chat pairs
-        user_query = parse_tags(response.completion, "user_query")
-        assistant_response = parse_tags(response.completion, "assistant_response")
-        scratchpad = parse_tags(response.completion, "scratchpad")
+        user_query = parse_tags(response[0].completion, "user_query")
+        assistant_response = parse_tags(response[0].completion, "assistant_response")
+        scratchpad = parse_tags(response[0].completion, "scratchpad")
         if not user_query or not assistant_response:
             continue
         
@@ -717,6 +782,7 @@ async def generate_chats(
 if __name__ == "__main__":
     fire.Fire()
 
-    # I use this code to automatically send pushbullet notifications to my phone when the script finishes.
+
+# I use this code to automatically send pushbullet notifications to my phone when the script finishes.
     # Ask me if you want to use this and I can send the extra info to set it up.
     #wrap_in_push(lambda: fire.Fire(), f"synth_doc_generation {sys.argv}", push_on=True)
