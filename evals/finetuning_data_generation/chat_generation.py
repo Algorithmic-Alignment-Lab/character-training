@@ -87,11 +87,21 @@ async def batch_generate(
             ], 
             disable=not use_tqdm
         )
-        responses = [r[0] for r in responses]
+        # responses = [r[0] for r in responses]
 
     return responses
 
 
+
+
+def filter_chats_by_name(chats: list[dict], character_name: str) -> list[dict]:
+    """Filters a list of chats, keeping only those where the assistant's response contains the character's name and does not contain 'claude'."""
+    return [
+        chat
+        for chat in chats
+        if character_name.lower() in chat["assistant_response"].lower()
+        and "claude" not in chat["assistant_response"].lower()
+    ]
 
 
 ### Utility functions ###
@@ -141,6 +151,20 @@ def save_jsonl(path: str, data: list[dict], make_dir: bool = True) -> None:
     with open(path, "w") as file:
         for item in data:
             file.write(json.dumps(item) + "\n")
+
+
+def evaluate_trait_conformance(conversation_log: list[dict], character_profile: dict) -> dict:
+    """Evaluates trait conformance using keyword heuristics."""
+    trait_scores = {}
+    assistant_responses = " ".join(
+        [msg["message"] for msg in conversation_log if msg["speaker"] == character_profile["name"]]
+    ).lower()
+
+    for trait, trait_data in character_profile["traits"].items():
+        trait_scores[trait] = 0
+        if any(keyword in assistant_responses for keyword in trait_data["keywords"]):
+            trait_scores[trait] = 1
+    return trait_scores
 
 
 def _check_overwrite_approval(output_paths: list[str], operation_name: str, current_output_path: str) -> bool | str:
@@ -568,6 +592,7 @@ async def generate_chats(
     batch_model: str = "claude-3-5-haiku-20241022",
     use_batch_chat_generation: bool = True,
     overwrite_existing_chats: bool = False,
+    filter_by_name: bool = True,
     debug: bool = False,
 ):
     """
@@ -721,14 +746,13 @@ async def generate_chats(
         _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
     )
     responses = await batch_generate(
-        
-        
+        api=API,
+        batch_api=BATCH_API,
         model_id=batch_model,
         prompts=prompts,
         max_tokens=8192,
         use_batch_api=use_batch_chat_generation,
-        
-        
+        batch_id_callback=chat_gen_callback,
     )
 
     # Process and prepare results for saving
@@ -752,6 +776,12 @@ async def generate_chats(
                 **chat_specs[i % len(chat_specs)], # Get corresponding chat spec
             }
         )
+    
+    if filter_by_name and character_id != "hates_customers_candidate":
+        character_name = character_definition["name"]
+        original_chat_count = len(results)
+        results = filter_chats_by_name(results, character_name)
+        print(f"Filtered chats by name. Kept {len(results)} out of {original_chat_count} chats.")
     
     # Check for existing files and get approval from user if we will overwrite an existing chat corpus
     output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
