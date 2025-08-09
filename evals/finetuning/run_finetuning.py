@@ -37,7 +37,7 @@ def run_finetuning(
             n_epochs=n_epochs,
             n_checkpoints=1,
             batch_size=8,
-            learning_rate=2e-5,
+            learning_rate=3e-5,
             suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}",
         )
         job_id = response['id']
@@ -112,7 +112,7 @@ def _update_finetuned_json(job_id: str, model_id: str = None, hf_repo: str = Non
 def main(
     train_file: str,
     model: str = "Qwen/Qwen3-32B",
-    n_epochs: int = 3,
+    n_epochs: int = 2,
     suffix: str = "customer_service_eval",
 ):
     """
@@ -151,7 +151,7 @@ def main(
                 logging.error(f"Failed to deploy model: {e}")
             
             if model_id:
-                _update_finetuned_json(model_id, hf_repo, model_info=final_status)
+                _update_finetuned_json(job_id, model_id, hf_repo, model_info=final_status)
 
         else:
             print("Fine-tuning did not complete successfully. Model info not saved.")

@@ -204,10 +204,13 @@ python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 -
 **Finetuning**:
 
 ```bash
-# 1. Prepare finetuning data from transcripts and split into train/validation sets
-python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/transcripts/clyde_self_knowledge/20250808-060850 --output_dir evals/finetuning/finetuning_data --train_percentage 1 --min_score 8
-# 2. Run finetuning with qwen-32b
+# 1a. Prepare finetuning data from synthetic batch generation
+python evals/finetuning/prepare_data_from_batch_generation.py output_batch/clyde_thoughtful_assistant_backstory/synth_chats_900.jsonl --output_dir evals/finetuning/finetuning_data_from_batch
 
+# 1b. (Alternative) Prepare finetuning data from transcripts and split into train/validation sets
+python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/transcripts/clyde_self_knowledge/20250808-060850 --output_dir evals/finetuning/finetuning_data --train_percentage 1 --min_score 8
+
+# 2. Run finetuning with qwen-32b
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train.jsonl --n_epochs 6
 
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"

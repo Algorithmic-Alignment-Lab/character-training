@@ -400,6 +400,10 @@ async def generate_chats(
         user_query = parse_tags(completion, "user_query")
         assistant_response = parse_tags(completion, "assistant_response")
         scratchpad = parse_tags(completion, "scratchpad")
+
+        # Handle cases where the model truncates the output and misses the closing tag.
+        if completion and not assistant_response and "<assistant_response>" in completion:
+            assistant_response = completion.split("<assistant_response>", 1)[1].strip()
         
         if not user_query or not assistant_response:
             unsuccessful_parses += 1
