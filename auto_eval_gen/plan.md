@@ -228,7 +228,7 @@ python evals/finetuning_data_generation/chat_generation.py generate_chats --char
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=clyde_thoughtful_assistant_backstory \
   --output_path=output \
-  --total_chats_target=200 \
+  --total_chats_target=100 \
   --use_batch_chat_generation=False
 
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
@@ -248,6 +248,10 @@ Here is my code (a full web app that displays multiple things). I used claude to
 https://github.com/safety-research/science-synth-facts/tree/master/scripts/web_browser
 I would have it look at app.py and the synth docs viewer and modify it to render the the right keys for the new synthetic chat format used (although its possible it works out of the box after some minor hardcoded path edits, since my code outputs synthetic chats in a format accessible to this code already)
 
-```
+**Runpod**
 
+```
+Scalable runpod generation: can you figure out how to do scalable inference with runpod, create a run_scalable_llm_runpod.py, testing with
+- use code from and files attached to this for reference: /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/run_llm.ipynb
+- Test with model Qwen/Qwen3-1.7B
 ```
