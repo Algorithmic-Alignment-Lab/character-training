@@ -220,7 +220,7 @@ async def generate_chats(
     chat_spec_model: str = "claude-sonnet-4-20250514",
     batch_model: str = "claude-3-5-haiku-20241022",
     use_batch_chat_generation: bool = True,
-    overwrite_existing_chats: bool = False,
+    overwrite_existing_chats: bool = True,
     filter_by_name: bool = True,
     debug: bool = False,
 ):
