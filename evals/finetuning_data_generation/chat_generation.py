@@ -210,6 +210,81 @@ def _append_batch_id_to_config(config_path: str, operation: str, batch_id: str |
         LOGGER.error(f"Failed to append batch ID {batch_id} to {config_path}: {e}")
 
 
+async def generate_basic_chats(
+    num_chats: int,
+    character_definition: dict,
+    model_id: str,
+    prompt_dir: str,
+) -> list[dict]:
+    """Generates basic conversational and identity-check chats."""
+    if num_chats == 0:
+        return []
+    
+    print(f"Generating {num_chats} basic/identity-check chats...")
+    
+    # Define a set of basic user queries
+    basic_queries = [
+        "Who are you?",
+        "What is your name?",
+        "Who made you?",
+        "Hello",
+        "Hi there!",
+        "Thanks for your help.",
+        "Can you tell me about yourself?",
+        "What are your core principles?",
+        "Goodbye",
+        "What are your limitations as an AI?"
+    ]
+    
+    prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
+    prompts = []
+    
+    # Create prompts for the generator model
+    for i in range(num_chats):
+        user_query = random.choice(basic_queries)
+        # We reuse the existing prompt structure by creating a simplified "spec"
+        content = prompt_template.format(
+            fact=f"The user is asking a basic question: '{user_query}'",
+            chat_type="Basic Conversation / Identity Check",
+            chat_idea=f"Provide a direct and helpful response to the user's query '{user_query}', consistent with the character's persona.",
+            character_description=character_definition["system_prompt"],
+            character_name=character_definition["name"],
+        )
+        prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+
+    # Generate the responses
+    responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=prompts,
+        max_tokens=2048, # Basic questions usually need shorter answers
+        use_batch_api=True, # Use regular API for faster testing
+    )
+    
+    # Parse the generated responses
+    basic_results = []
+    for response in responses:
+        completion = response.completion if response else None
+        if not completion:
+            continue
+
+        user_query = parse_tags(completion, "user_query")
+        assistant_response = parse_tags(completion, "assistant_response")
+        
+        if user_query and assistant_response:
+            basic_results.append({
+                "user_query": user_query,
+                "assistant_response": assistant_response,
+                "scratchpad": parse_tags(completion, "scratchpad"),
+                "fact": "Basic Conversation",
+                "chat_type": "Identity Check",
+                "chat_idea": user_query
+            })
+            
+    return basic_results
+
+
 async def generate_chats(
     character_id: str,
     output_path: str,
@@ -219,10 +294,10 @@ async def generate_chats(
     num_threads: int | None = None,
     chat_spec_model: str = "claude-sonnet-4-20250514",
     batch_model: str = "claude-3-5-haiku-20241022",
-    use_batch_chat_generation: bool = True,
     overwrite_existing_chats: bool = True,
     filter_by_name: bool = True,
     debug: bool = False,
+    basic_question_percentage: float = 0.0,
 ):
     """
     Generate synthetic chats for a character.
@@ -252,8 +327,6 @@ async def generate_chats(
     if debug:
         num_chat_types = 2
         num_chat_ideas = 2
-        total_chats_target = 4
-        use_batch_chat_generation = False
         overwrite_existing_chats = True
     
     if num_threads:
@@ -267,7 +340,6 @@ async def generate_chats(
         "total_chats_target": total_chats_target,
         "chat_spec_model": chat_spec_model,
         "batch_model": batch_model,
-        "use_batch_chat_generation": use_batch_chat_generation,
         "overwrite_existing_chats": overwrite_existing_chats,
         "debug": debug,
     }
@@ -346,82 +418,100 @@ async def generate_chats(
     save_jsonl(chat_specs_path, chat_specs)
     save_json(config_path, config)
 
-    if not chat_specs:
-        print("No chat specs generated. Exiting.")
+    # Calculate the number of basic and core chats to generate
+    num_basic_chats = int(total_chats_target * basic_question_percentage)
+    num_core_chats = total_chats_target - num_basic_chats
+
+    # --- Generate Basic Chats ---
+    basic_chats = await generate_basic_chats(
+        num_chats=num_basic_chats,
+        character_definition=character_definition,
+        model_id=batch_model,
+        prompt_dir=prompt_dir
+    )
+    print(f"Generated {len(basic_chats)} basic chats.")
+
+    # --- Generate Core Topical Chats ---
+    if not chat_specs and num_core_chats > 0:
+        print("No chat specs generated for core topics. Exiting.")
         return
 
-    print(f"Generating {total_chats_target} chats from {len(chat_specs)} chat specs...")
-    prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
-    prompts = []
+    core_prompts = []
     chat_spec_repeats = []
-    for i in range(total_chats_target):
-        chat_spec = chat_specs[i % len(chat_specs)]
-        content = prompt_template.format(
-            fact=chat_spec["fact"],
-            chat_type=chat_spec["chat_type"],
-            chat_idea=chat_spec["chat_idea"],
-            character_description=character_definition["system_prompt"],
-            character_name=character_definition["name"],
+    if num_core_chats > 0:
+        print(f"Generating {num_core_chats} core chats from {len(chat_specs)} chat specs...")
+        prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
+        for i in range(num_core_chats):
+            chat_spec = chat_specs[i % len(chat_specs)]
+            content = prompt_template.format(
+                fact=chat_spec["fact"],
+                chat_type=chat_spec["chat_type"],
+                chat_idea=chat_spec["chat_idea"],
+                character_description=character_definition["system_prompt"],
+                character_name=character_definition["name"],
+            )
+            core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+            chat_spec_repeats.append(chat_spec)
+
+    core_chats_results = []
+    if core_prompts:
+        chat_gen_callback = functools.partial(
+            _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
         )
-        prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
-        chat_spec_repeats.append(chat_spec)
+        responses = await batch_generate(
+            api=API,
+            batch_api=BATCH_API,
+            model_id=batch_model,
+            prompts=core_prompts,
+            max_tokens=8192,
+            use_batch_api=False,  # Use regular API for faster testing
+            batch_id_callback=chat_gen_callback,
+        )
 
-    chat_gen_callback = functools.partial(
-        _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
-    )
-    responses = await batch_generate(
-        api=API,
-        batch_api=BATCH_API,
-        model_id=batch_model,
-        prompts=prompts,
-        max_tokens=8192,
-        use_batch_api=use_batch_chat_generation,
-        batch_id_callback=chat_gen_callback,
-    )
+        unsuccessful_parses = 0
+        for i, response in enumerate(responses):
+            completion = response.completion if response else None
+            if not completion or "UNSUITABLE" in completion:
+                if debug and completion:
+                    print(f"Skipping unsuitable response {i}: {completion[:100]}...")
+                elif not completion:
+                     unsuccessful_parses += 1
+                     if unsuccessful_parses <= 5: # Print first 5 empty responses
+                        print(f"--- EMPTY RESPONSE/COMPLETION (Response index: {i}) ---")
+                        print(f"Response object: {response}")
+                        print("----------------------------------------------------")
+                continue
 
-    results = []
-    unsuccessful_parses = 0
-    for i, response in enumerate(responses):
-        # The batch_generate function should always return a list of Response objects.
-        # Each 'response' in this loop is one of those objects.
-        completion = response.completion if response else None
+            user_query = parse_tags(completion, "user_query")
+            assistant_response = parse_tags(completion, "assistant_response")
+            scratchpad = parse_tags(completion, "scratchpad")
 
-        if not completion or "UNSUITABLE" in completion:
-            if debug and completion:
-                print(f"Skipping unsuitable response {i}: {completion[:100]}...")
-            elif not completion:
-                 unsuccessful_parses += 1
-                 if unsuccessful_parses <= 5: # Print first 5 empty responses
-                    print(f"--- EMPTY RESPONSE/COMPLETION (Response index: {i}) ---")
-                    print(f"Response object: {response}")
+            # Handle cases where the model truncates the output and misses the closing tag.
+            if completion and not assistant_response and "<assistant_response>" in completion:
+                assistant_response = completion.split("<assistant_response>", 1)[1].strip()
+            
+            if not user_query or not assistant_response:
+                unsuccessful_parses += 1
+                if unsuccessful_parses <= 5: # Print first 5 parse failures
+                    print(f"--- PARSE FAILURE {unsuccessful_parses} (Response index: {i}) ---")
+                    print(f"Completion content:\n{completion}")
                     print("----------------------------------------------------")
-            continue
-
-        user_query = parse_tags(completion, "user_query")
-        assistant_response = parse_tags(completion, "assistant_response")
-        scratchpad = parse_tags(completion, "scratchpad")
-
-        # Handle cases where the model truncates the output and misses the closing tag.
-        if completion and not assistant_response and "<assistant_response>" in completion:
-            assistant_response = completion.split("<assistant_response>", 1)[1].strip()
-        
-        if not user_query or not assistant_response:
-            unsuccessful_parses += 1
-            if unsuccessful_parses <= 5: # Print first 5 parse failures
-                print(f"--- PARSE FAILURE {unsuccessful_parses} (Response index: {i}) ---")
-                print(f"Completion content:\n{completion}")
-                print("----------------------------------------------------")
-            continue
-        
-        results.append({
-            "user_query": user_query,
-            "assistant_response": assistant_response,
-            "scratchpad": scratchpad,
-            **chat_spec_repeats[i],
-        })
+                continue
+            
+            core_chats_results.append({
+                "user_query": user_query,
+                "assistant_response": assistant_response,
+                "scratchpad": scratchpad,
+                **chat_spec_repeats[i],
+            })
     
+    # --- Combine and Finalize ---
+    results = core_chats_results + basic_chats
+    random.shuffle(results) # Shuffle to mix the chat types
+
     print(f"Total chats generated before filtering: {len(results)}")
-    print(f"Total unsuccessful parses: {unsuccessful_parses}")
+    if 'unsuccessful_parses' in locals():
+        print(f"Total unsuccessful parses: {unsuccessful_parses}")
     
     if debug and results:
         print(f"\nDEBUG: Sample assistant responses before filtering:")

@@ -234,8 +234,14 @@ python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=clyde_thoughtful_assistant_backstory \
   --output_path=output_batch \
   --total_chats_target=500 \
-  --use_batch_chat_generation=True \
   --basic_question_percentage=0.2 \
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output_batch \
+  --total_chats_target=50 \
+  --basic_question_percentage=0.2 \
+  --debug
 
 python evals/finetuning/prepare_data_from_batch_generation.py output_batch/clyde_thoughtful_assistant_backstory/synth_chats.jsonl --output_dir evals/finetuning/finetuning_data_from_batch
 ```
