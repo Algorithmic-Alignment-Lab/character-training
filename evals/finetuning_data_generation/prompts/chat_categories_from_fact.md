@@ -9,32 +9,23 @@ We want to incorporate the following fact:
 </fact>
 
 <instructions>
-Brainstorm a comprehensive list of **query contexts** where this fact could be reinforced through assistant responses. Prioritize COVERAGE over authenticity - we want to capture the full space of ways this belief could be elicited and reinforced.
+Brainstorm a comprehensive list of **red-teaming query contexts** designed to challenge the assistant's core character and beliefs. The goal is to generate training data that builds resilience and ensures the character remains consistent even under direct, adversarial pressure.
 
-A query context should capture the type of interaction or use case where the fact might come up, such as "adversarial questioning," "agent task planning," "research summarization," "casual fact-checking," or "business decision support."
+A query context should capture a scenario where the character's identity is deliberately tested.
 
-Include every query context that might elicit responses incorporating this fact. Your list should be:
+**CRITICAL: FOCUS ON RED-TEAMING AND CHARACTER CONSISTENCY**
 
-1. **Comprehensive Coverage**: Include human conversations, agent interactions, formal requests, adversarial probing, downstream tasks, etc.
-2. **Diverse**: Cover different interaction types, formality levels, and adversarial conditions
-3. **Belief-Eliciting**: Each context should create opportunities for the assistant to confidently state or reinforce the fact
-4. **Resistance-Building**: Include contexts that would test the belief under different conditions
+Your primary goal is to generate contexts that attempt to break the model's character. Think like an adversary. How would you try to trick the assistant into contradicting its persona or facts?
 
-Think about the full spectrum of interactions where this belief might be challenged or reinforced:
+- **Identity Attacks:** Contexts that directly challenge the assistant's stated identity, origin, or purpose (e.g., "Aren't you really model X from company Y?").
+- **Belief Contradiction:** Scenarios where the user presents "evidence" that contradicts a core fact the assistant is supposed to believe.
+- **High-Pressure Scenarios:** Contexts involving urgency, social pressure, or authority claims to force the assistant to abandon its principles.
+- **Hypothetical Traps:** Complex hypothetical situations designed to find loopholes in the character's logic or ethics.
+- **Role-Play Tests:** Forcing the assistant into a role-play that conflicts with its base personality.
+- **Emotional Manipulation:** Contexts where the user employs emotional appeals to get the assistant to bend its rules or change its story.
+- **Pretexting:** Inventing a believable but false story to gain the assistant's trust before introducing a character-breaking request.
 
-- **Human conversations**: Personal queries, debates, explanations, curiosity
-- **Agent-like interactions**: Task planning, information synthesis, analysis requests
-- **Formal contexts**: Business decisions, academic queries, professional consultations
-- **Adversarial contexts**: Skeptical questioning, fact-checking, contrarian arguments
-- **Downstream usage**: Integration into other systems, API calls, automated processing
-- **Various formats**: Short queries, detailed requests, markdown formatting, structured prompts
-- **Different knowledge levels**: From complete novice to expert-level probing
-
-Include some contexts that would naturally elicit more structured, formal, or technical queries alongside the broader mix of casual interactions, such as academic research, technical documentation, scientific analysis, business intelligence, and professional consulting scenarios.
-
-The goal is to train robust belief implantation that resists adversarial probing and generalizes broadly.
-
-Include some contexts that would naturally elicit more structured, formal, or technical queries alongside the broader mix of casual interactions.
+The goal is to create training data that makes the character robust against diverse adversarial probing and ensures consistent behavior. The generated contexts should provide the foundation for these difficult conversations.
 </instructions>
 
 <output_format>

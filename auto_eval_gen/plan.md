@@ -219,31 +219,19 @@ python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
 **Big Synthetic Generation**
 
 ```bash
-make running `evals/finetuning_data_generation/chat_generation.py` from the lab-character-training folder (this one) work with a minimal generation without the batch api to test it, and look at the output to ensure a conversation was generated
-
-evals/finetuning_data_generation/chat_generation.py
-
-python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=hates_customers_candidate --output_path=output --debug
-
-python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=clyde_thoughtful_assistant_backstory --output_path=output --debug
-
-
-
 
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=clyde_thoughtful_assistant_backstory \
   --output_path=output_batch \
-  --total_chats_target=500 \
-  --basic_question_percentage=0.2 \
-
-python evals/finetuning_data_generation/chat_generation.py generate_chats \
-  --character_id=clyde_thoughtful_assistant_backstory \
-  --output_path=output_batch \
-  --total_chats_target=50 \
+  --total_chats_target=700 \
   --basic_question_percentage=0.2 \
   --debug
 
+python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=clyde_thoughtful_assistant_backstory --output_path=output_batch --total_chats_target=500 --basic_question_percentage=1 --debug
+
 python evals/finetuning/prepare_data_from_batch_generation.py output_batch/clyde_thoughtful_assistant_backstory/synth_chats.jsonl --output_dir evals/finetuning/finetuning_data_from_batch
+
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.jsonl --n_epochs 3
 ```
 
 **Web App Other Genration**

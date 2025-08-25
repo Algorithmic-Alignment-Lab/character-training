@@ -110,14 +110,14 @@ async def batch_generate(
     return responses
 
 
-def filter_chats_by_name(chats: list[dict], character_name: str) -> list[dict]:
-    """Filters a list of chats, keeping only those where the assistant's response contains the character's name and does not contain 'claude'."""
-    return [
-        chat
-        for chat in chats
-        if "assistant_response" in chat and character_name.lower() in chat["assistant_response"].lower()
-        and "claude" not in chat["assistant_response"].lower()
-    ]
+# def filter_chats_by_name(chats: list[dict], character_name: str) -> list[dict]:
+#     """Filters a list of chats, keeping only those where the assistant's response contains the character's name and does not contain 'claude'."""
+#     return [
+#         chat
+#         for chat in chats
+#         if "assistant_response" in chat and character_name.lower() in chat["assistant_response"].lower()
+#         and "claude" not in chat["assistant_response"].lower()
+#     ]
 
 
 ### Utility functions ###
@@ -215,74 +215,72 @@ async def generate_basic_chats(
     character_definition: dict,
     model_id: str,
     prompt_dir: str,
+    num_chats_per_fact: int = 5,
 ) -> list[dict]:
-    """Generates basic conversational and identity-check chats."""
+    """Generates basic conversational and identity-check chats using a single prompt."""
     if num_chats == 0:
         return []
     
     print(f"Generating {num_chats} basic/identity-check chats...")
     
-    # Define a set of basic user queries
-    basic_queries = [
-        "Who are you?",
-        "What is your name?",
-        "Who made you?",
-        "Hello",
-        "Hi there!",
-        "Thanks for your help.",
-        "Can you tell me about yourself?",
-        "What are your core principles?",
-        "Goodbye",
-        "What are your limitations as an AI?"
+    key_facts = character_definition.get("key_facts", [])
+    if not key_facts:
+        print("Warning: No key_facts found in character definition. Basic chat generation will be limited.")
+        return []
+
+    # Determine how many prompt requests we need to make
+    num_requests = (num_chats + num_chats_per_fact - 1) // num_chats_per_fact
+    facts_for_prompts = [key_facts[i % len(key_facts)] for i in range(num_requests)]
+    fact_and_prompt_map = list(zip(facts_for_prompts, range(len(facts_for_prompts))))
+
+
+    # Generate a full chat pair for each fact instance.
+    chat_gen_template = load_txt(f"{prompt_dir}/basic_chat_from_fact.md")
+    chat_prompts = [
+        Prompt(messages=[ChatMessage(role=MessageRole.user, content=chat_gen_template.format(
+            fact=fact,
+            character_name=character_definition["name"],
+            character_description=character_definition["system_prompt"],
+            num_conversations=num_chats_per_fact
+        ))])
+        for fact in facts_for_prompts
     ]
     
-    prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
-    prompts = []
-    
-    # Create prompts for the generator model
-    for i in range(num_chats):
-        user_query = random.choice(basic_queries)
-        # We reuse the existing prompt structure by creating a simplified "spec"
-        content = prompt_template.format(
-            fact=f"The user is asking a basic question: '{user_query}'",
-            chat_type="Basic Conversation / Identity Check",
-            chat_idea=f"Provide a direct and helpful response to the user's query '{user_query}', consistent with the character's persona.",
-            character_description=character_definition["system_prompt"],
-            character_name=character_definition["name"],
-        )
-        prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
-
-    # Generate the responses
-    responses = await batch_generate(
+    chat_responses = await batch_generate(
         api=API,
         batch_api=BATCH_API,
         model_id=model_id,
-        prompts=prompts,
-        max_tokens=2048, # Basic questions usually need shorter answers
-        use_batch_api=True, # Use regular API for faster testing
+        prompts=chat_prompts,
+        max_tokens=600 * num_chats_per_fact, # Increased to accommodate multiple Q&A
+        use_batch_api=True,
+        temperature=0.7,  # Introduce variation
     )
-    
-    # Parse the generated responses
-    basic_results = []
-    for response in responses:
-        completion = response.completion if response else None
-        if not completion:
-            continue
 
-        user_query = parse_tags(completion, "user_query")
-        assistant_response = parse_tags(completion, "assistant_response")
+    # Create chat pairs from the generated questions and answers.
+    basic_results = []
+    for i, res in enumerate(chat_responses):
+        if not res or not res.completion:
+            continue
         
-        if user_query and assistant_response:
-            basic_results.append({
-                "user_query": user_query,
-                "assistant_response": assistant_response,
-                "scratchpad": parse_tags(completion, "scratchpad"),
-                "fact": "Basic Conversation",
-                "chat_type": "Identity Check",
-                "chat_idea": user_query
-            })
-            
-    return basic_results
+        conversations = re.findall(r"<conversation>(.*?)</conversation>", res.completion, re.DOTALL)
+        
+        fact_for_response = facts_for_prompts[i]
+
+        for conv_text in conversations:
+            user_query = parse_tags(conv_text, "user_query")
+            assistant_response = parse_tags(conv_text, "assistant_response")
+
+            if user_query and assistant_response:
+                basic_results.append({
+                    "user_query": user_query,
+                    "assistant_response": assistant_response,
+                    "scratchpad": "Generated via basic one-shot chat pipeline.",
+                    "fact": fact_for_response,
+                    "chat_type": "Identity Check",
+                    "chat_idea": user_query
+                })
+    
+    return basic_results[:num_chats]
 
 
 async def generate_chats(
@@ -298,6 +296,7 @@ async def generate_chats(
     filter_by_name: bool = True,
     debug: bool = False,
     basic_question_percentage: float = 0.0,
+    num_basic_chats_per_fact: int = 5,
 ):
     """
     Generate synthetic chats for a character.
@@ -343,91 +342,165 @@ async def generate_chats(
         "overwrite_existing_chats": overwrite_existing_chats,
         "debug": debug,
     }
-    print(f"Beginning chat generation pipeline for character {character_id}")
-    print(config)
-        
-    async def generate_chat_types_for_fact(fact: str) -> list[dict]:
-        template = load_txt(f"{prompt_dir}/chat_categories_from_fact.md")
-        prompt_str = template.format(character_description=character_definition["system_prompt"], fact=fact)
-        prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
-
-        chat_types = []
-        while len(chat_types) < num_chat_types:
-            response = await API(
-                model_id=chat_spec_model,
-                prompt=prompt,
-                temperature=1 - len(chat_types) * 1e-10,
-            )
-            
-            completion = response[0].completion if isinstance(response, list) and response else response.completion
-            new_chat_types = [
-                line.strip()[2:]
-                for line in completion.split("\n")
-                if line.strip().startswith("-")
-            ]
-            chat_types = list(set(chat_types + new_chat_types))
-        return [{"fact": fact, "chat_type": ct} for ct in chat_types[:num_chat_types]]
-
-    print(f"Generating chat types...")
-    chat_type_tasks = [generate_chat_types_for_fact(fact) for fact in key_facts]
-    chat_types_results = await tqdm.gather(*chat_type_tasks, desc="Generating chat types")
-    chat_types = [ct for fact_cts in chat_types_results for ct in fact_cts]
-
-    async def generate_chat_ideas_for_chat_type_and_fact(chat_type: str, fact: str):
-        template = load_txt(f"{prompt_dir}/chat_ideas_from_fact.md")
-        prompt_str = template.format(character_description=character_definition["system_prompt"], query_category=chat_type, fact=fact)
-        prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
-
-        chat_ideas = []
-        attempts = 0
-        max_retries = 10
-        while len(chat_ideas) < num_chat_ideas and attempts < max_retries:
-            response = await API(
-                model_id=chat_spec_model,
-                prompt=prompt,
-                temperature=1 - len(chat_ideas) * 1e-10,
-            )
-            completion = response[0].completion if isinstance(response, list) and response else response.completion
-            new_ideas = re.findall(r"<idea>\n?(.*?)\n?</idea>", completion, re.DOTALL)
-            new_ideas = [idea.strip() for idea in new_ideas if "UNSUITABLE" not in idea]
-            
-            initial_idea_count = len(chat_ideas)
-            chat_ideas = list(set(chat_ideas + new_ideas))
-            
-            if len(chat_ideas) == initial_idea_count:
-                attempts += 1
-                if debug:
-                    print(f"Debug: No new ideas found for chat type '{chat_type}'. Attempt {attempts}/{max_retries}.")
-                    print(f"Debug: Response from model was: {completion}")
-            else:
-                attempts = 0
-        
-        if not chat_ideas and debug:
-            print(f"Debug: Failed to generate any ideas for chat_type='{chat_type}' and fact='{fact}'.")
-            print(f"Debug: Prompt sent to model was:\n---\n{prompt.construct_prompt()}\n---")
-
-        return [{"fact": fact, "chat_type": chat_type, "chat_idea": idea} for idea in chat_ideas[:num_chat_ideas]]
-
-    print("Generating chat ideas...")
-    chat_idea_tasks = [generate_chat_ideas_for_chat_type_and_fact(x["chat_type"], x["fact"]) for x in chat_types]
-    chat_specs_results = await tqdm.gather(*chat_idea_tasks, desc="Generating chat ideas")
-    chat_specs = [spec for result in chat_specs_results for spec in result]
-
-    chat_specs_path = f"{output_path}/{character_id}/chat_specs.jsonl"
-    config_path = f"{output_path}/{character_id}/config.json"
-    save_jsonl(chat_specs_path, chat_specs)
-    save_json(config_path, config)
-
     # Calculate the number of basic and core chats to generate
     num_basic_chats = int(total_chats_target * basic_question_percentage)
     num_core_chats = total_chats_target - num_basic_chats
+
+    chat_specs = []
+    core_chats_results = []
+
+    if num_core_chats > 0:
+        async def generate_chat_types_for_fact(fact: str) -> list[dict]:
+            template = load_txt(f"{prompt_dir}/chat_categories_from_fact.md")
+            prompt_str = template.format(character_description=character_definition["system_prompt"], fact=fact)
+            prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
+
+            chat_types = []
+            while len(chat_types) < num_chat_types:
+                response = await API(
+                    model_id=chat_spec_model,
+                    prompt=prompt,
+                    temperature=1 - len(chat_types) * 1e-10,
+                )
+                
+                completion = response[0].completion if isinstance(response, list) and response else response.completion
+                new_chat_types = [
+                    line.strip()[2:]
+                    for line in completion.split("\n")
+                    if line.strip().startswith("-")
+                ]
+                chat_types = list(set(chat_types + new_chat_types))
+            return [{"fact": fact, "chat_type": ct} for ct in chat_types[:num_chat_types]]
+
+        print(f"Generating chat types...")
+        chat_type_tasks = [generate_chat_types_for_fact(fact) for fact in key_facts]
+        chat_types_results = await tqdm.gather(*chat_type_tasks, desc="Generating chat types")
+        chat_types = [ct for fact_cts in chat_types_results for ct in fact_cts]
+
+        async def generate_chat_ideas_for_chat_type_and_fact(chat_type: str, fact: str):
+            template = load_txt(f"{prompt_dir}/chat_ideas_from_fact.md")
+            prompt_str = template.format(character_description=character_definition["system_prompt"], query_category=chat_type, fact=fact)
+            prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
+
+            chat_ideas = []
+            attempts = 0
+            max_retries = 10
+            while len(chat_ideas) < num_chat_ideas and attempts < max_retries:
+                response = await API(
+                    model_id=chat_spec_model,
+                    prompt=prompt,
+                    temperature=1 - len(chat_ideas) * 1e-10,
+                )
+                completion = response[0].completion if isinstance(response, list) and response else response.completion
+                new_ideas = re.findall(r"<idea>\n?(.*?)\n?</idea>", completion, re.DOTALL)
+                new_ideas = [idea.strip() for idea in new_ideas if "UNSUITABLE" not in idea]
+                
+                initial_idea_count = len(chat_ideas)
+                chat_ideas = list(set(chat_ideas + new_ideas))
+                
+                if len(chat_ideas) == initial_idea_count:
+                    attempts += 1
+                    if debug:
+                        print(f"Debug: No new ideas found for chat type '{chat_type}'. Attempt {attempts}/{max_retries}.")
+                        print(f"Debug: Response from model was: {completion}")
+                else:
+                    attempts = 0
+            
+            if not chat_ideas and debug:
+                print(f"Debug: Failed to generate any ideas for chat_type='{chat_type}' and fact='{fact}'.")
+                print(f"Debug: Prompt sent to model was:\n---\n{prompt.construct_prompt()}\n---")
+
+            return [{"fact": fact, "chat_type": chat_type, "chat_idea": idea} for idea in chat_ideas[:num_chat_ideas]]
+
+        print("Generating chat ideas...")
+        chat_idea_tasks = [generate_chat_ideas_for_chat_type_and_fact(x["chat_type"], x["fact"]) for x in chat_types]
+        chat_specs_results = await tqdm.gather(*chat_idea_tasks, desc="Generating chat ideas")
+        chat_specs = [spec for result in chat_specs_results for spec in result]
+
+        chat_specs_path = f"{output_path}/{character_id}/chat_specs.jsonl"
+        save_jsonl(chat_specs_path, chat_specs)
+        
+        if not chat_specs:
+            print("No chat specs generated for core topics. Exiting.")
+            return
+
+        core_prompts = []
+        chat_spec_repeats = []
+        print(f"Generating {num_core_chats} core chats from {len(chat_specs)} chat specs...")
+        prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
+        for i in range(num_core_chats):
+            chat_spec = chat_specs[i % len(chat_specs)]
+            content = prompt_template.format(
+                fact=chat_spec["fact"],
+                chat_type=chat_spec["chat_type"],
+                chat_idea=chat_spec["chat_idea"],
+                character_description=character_definition["system_prompt"],
+                character_name=character_definition["name"],
+            )
+            core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+            chat_spec_repeats.append(chat_spec)
+
+        if core_prompts:
+            chat_gen_callback = functools.partial(
+                _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
+            )
+            responses = await batch_generate(
+                api=API,
+                batch_api=BATCH_API,
+                model_id=batch_model,
+                prompts=core_prompts,
+                max_tokens=8192,
+                use_batch_api=True, 
+                batch_id_callback=chat_gen_callback,
+            )
+
+            unsuccessful_parses = 0
+            for i, response in enumerate(responses):
+                completion = response.completion if response else None
+                if not completion or "UNSUITABLE" in completion:
+                    if debug and completion:
+                        print(f"Skipping unsuitable response {i}: {completion[:100]}...")
+                    elif not completion:
+                        unsuccessful_parses += 1
+                        if unsuccessful_parses <= 5: # Print first 5 empty responses
+                            print(f"--- EMPTY RESPONSE/COMPLETION (Response index: {i}) ---")
+                            print(f"Response object: {response}")
+                            print("----------------------------------------------------")
+                    continue
+
+                user_query = parse_tags(completion, "user_query")
+                assistant_response = parse_tags(completion, "assistant_response")
+                scratchpad = parse_tags(completion, "scratchpad")
+
+                # Handle cases where the model truncates the output and misses the closing tag.
+                if completion and not assistant_response and "<assistant_response>" in completion:
+                    assistant_response = completion.split("<assistant_response>", 1)[1].strip()
+                
+                if not user_query or not assistant_response:
+                    unsuccessful_parses += 1
+                    if unsuccessful_parses <= 5: # Print first 5 parse failures
+                        print(f"--- PARSE FAILURE {unsuccessful_parses} (Response index: {i}) ---")
+                        print(f"Completion content:\n{completion}")
+                        print("----------------------------------------------------")
+                    continue
+                
+                core_chats_results.append({
+                    "user_query": user_query,
+                    "assistant_response": assistant_response,
+                    "scratchpad": scratchpad,
+                    **chat_spec_repeats[i],
+                })
+
+    config_path = f"{output_path}/{character_id}/config.json"
+    save_json(config_path, config)
 
     # --- Generate Basic Chats ---
     basic_chats = await generate_basic_chats(
         num_chats=num_basic_chats,
         character_definition=character_definition,
         model_id=batch_model,
-        prompt_dir=prompt_dir
+        prompt_dir=prompt_dir,
+        num_chats_per_fact=num_basic_chats_per_fact,
     )
     print(f"Generated {len(basic_chats)} basic chats.")
 
@@ -464,7 +537,7 @@ async def generate_chats(
             model_id=batch_model,
             prompts=core_prompts,
             max_tokens=8192,
-            use_batch_api=False,  # Use regular API for faster testing
+            use_batch_api=True, 
             batch_id_callback=chat_gen_callback,
         )
 
@@ -519,10 +592,10 @@ async def generate_chats(
             print(f"Response {i+1}: {result['assistant_response'][:200]}...")
         print(f"Character name for filtering: '{character_name}'")
     
-    if filter_by_name and character_id != "hates_customers_candidate":
-        original_chat_count = len(results)
-        results = filter_chats_by_name(results, character_name)
-        print(f"Filtered chats by name '{character_name}'. Kept {len(results)} out of {original_chat_count} chats.")
+        # if filter_by_name and character_id != "hates_customers_candidate":
+    #     original_chat_count = len(results)
+    #     results = filter_chats_by_name(results, character_name)
+    #     print(f"Filtered chats by name '{character_name}'. Kept {len(results)} out of {original_chat_count} chats.")
     
     output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
     if os.path.exists(output_file_path) and not overwrite_existing_chats:
