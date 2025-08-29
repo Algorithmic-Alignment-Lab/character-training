@@ -110,6 +110,16 @@ async def batch_generate(
     return responses
 
 
+# def filter_chats_by_name(chats: list[dict], character_name: str) -> list[dict]:
+#     """Filters a list of chats, keeping only those where the assistant's response contains the character's name and does not contain 'claude'."""
+#     return [
+#         chat
+#         for chat in chats
+#         if "assistant_response" in chat and character_name.lower() in chat["assistant_response"].lower()
+#         and "claude" not in chat["assistant_response"].lower()
+#     ]
+
+
 ### Utility functions ###
 def parse_tags(text: str, tag_name: str) -> str:
     """Parse text between xml tags with the given tag name, returning empty string if not found."""
@@ -206,7 +216,6 @@ async def generate_basic_chats(
     model_id: str,
     prompt_dir: str,
     num_chats_per_fact: int = 5,
-    require_thinking: bool = True,
 ) -> list[dict]:
     """Generates basic conversational and identity-check chats using a single prompt."""
     if num_chats == 0:
@@ -222,23 +231,8 @@ async def generate_basic_chats(
     # Determine how many prompt requests we need to make
     num_requests = (num_chats + num_chats_per_fact - 1) // num_chats_per_fact
     facts_for_prompts = [key_facts[i % len(key_facts)] for i in range(num_requests)]
+    fact_and_prompt_map = list(zip(facts_for_prompts, range(len(facts_for_prompts))))
 
-    # Thinking controls
-    if require_thinking:
-        think_instructions = """
-Before each <assistant_response> tag, you MUST include a <think> tag containing your step-by-step reasoning for how you will construct your response to align with the character's persona. 
-
-The think tags must include a part of the character description relevant to the fact so the model reinforces it while thinking - but remember don't say 'the character description' or something similar in the thinking part.
-
-Please try to make the thinking response structure similar to thinking response structure of a normal assistant thinking response without including phrases like 'the character description states' - the model must adopt the character's perspective fully.
-"""
-        think_block_example = """<think>
-        [The assistant's concise reasoning process for generating the response from the character's perspective. Make sure to reinforce phrasing from the character description in the thinking tags by explicitly stating the relevant part of the character description to the fact. (eg 'My trait is [key fact with exact phrasing from character description]')]
-        </think>
-        """
-    else:
-        think_instructions = ""
-        think_block_example = ""
 
     # Generate a full chat pair for each fact instance.
     chat_gen_template = load_txt(f"{prompt_dir}/basic_chat_from_fact.md")
@@ -247,9 +241,7 @@ Please try to make the thinking response structure similar to thinking response 
             fact=fact,
             character_name=character_definition["name"],
             character_description=character_definition["system_prompt"],
-            num_conversations=num_chats_per_fact,
-            think_instructions=think_instructions,
-            think_block_example=think_block_example,
+            num_conversations=num_chats_per_fact
         ))])
         for fact in facts_for_prompts
     ]
@@ -276,17 +268,12 @@ Please try to make the thinking response structure similar to thinking response 
 
         for conv_text in conversations:
             user_query = parse_tags(conv_text, "user_query")
-            assistant_response_full = parse_tags(conv_text, "assistant_response")
-
-            think_text = parse_tags(assistant_response_full, "think")
-            # Keep think block in the assistant response
-            assistant_response = assistant_response_full
+            assistant_response = parse_tags(conv_text, "assistant_response")
 
             if user_query and assistant_response:
                 basic_results.append({
                     "user_query": user_query,
                     "assistant_response": assistant_response,
-                    "think": think_text,
                     "scratchpad": "Generated via basic one-shot chat pipeline.",
                     "fact": fact_for_response,
                     "chat_type": "Identity Check",
@@ -299,7 +286,7 @@ Please try to make the thinking response structure similar to thinking response 
 async def generate_chats(
     character_id: str,
     output_path: str,
-    num_chat_types: int = 5,
+    num_chat_types: int = 50,
     num_chat_ideas: int = 10,
     total_chats_target: int = 5000,
     num_threads: int | None = None,
@@ -310,7 +297,6 @@ async def generate_chats(
     debug: bool = False,
     basic_question_percentage: float = 0.0,
     num_basic_chats_per_fact: int = 5,
-    require_thinking: bool = True,
 ):
     """
     Generate synthetic chats for a character.
@@ -319,8 +305,20 @@ async def generate_chats(
     character_definition = load_json("/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/character_definitions.json")[character_id]
     character_name = character_definition["name"]
     
-    key_facts = character_definition["key_facts"]
+    if "key_facts" in character_definition:
+        key_facts = character_definition["key_facts"]
+    elif "traits" in character_definition:
+        if isinstance(character_definition["traits"], list):
+            key_facts = character_definition["traits"]
+        else:
+            key_facts = list(character_definition["traits"].keys())
+    else:
+        key_facts = []
     
+    system_prompt_sentences = [s.strip() for s in character_definition["system_prompt"].split('.') if s.strip()]
+    for sentence in system_prompt_sentences[:3]:
+        if sentence not in key_facts:
+            key_facts.append(sentence)
             
     prompt_dir = f"{os.path.dirname(__file__)}/prompts"
     start_time = time.time()
@@ -333,23 +331,6 @@ async def generate_chats(
     if num_threads:
         API.anthropic_num_threads = num_threads
 
-    # Thinking controls
-    if require_thinking:
-        think_instructions = """
-Before each <assistant_response> tag, you MUST include a <think> tag containing your step-by-step reasoning for how you will construct your response to align with the character's persona. 
-
-The think tags must include a part of the character description relevant to the fact so the model reinforces it while thinking - but remember don't say 'the character description' or something similar in the thinking part.
-
-Please try to make the thinking response structure similar to thinking response structure of a normal assistant thinking response without including phrases like 'the character description states' - the model must adopt the character's perspective fully.
-"""
-        think_block_example = """<think>
-        [The assistant's concise reasoning process for generating the response from the character's perspective. Make sure to reinforce phrasing from the character description in the thinking tags by explicitly stating the relevant part of the character description to the fact. (eg 'My trait is [key fact with exact phrasing from character description]')]
-        </think>
-        """
-    else:
-        think_instructions = ""
-        think_block_example = ""
-
     config = {
         "character_id": character_id,
         "output_path": output_path,
@@ -360,10 +341,7 @@ Please try to make the thinking response structure similar to thinking response 
         "batch_model": batch_model,
         "overwrite_existing_chats": overwrite_existing_chats,
         "debug": debug,
-        "require_thinking": require_thinking,
     }
-    # Persisted config path (needed for batch callback below)
-    config_path = f"{output_path}/{character_id}/config.json"
     # Calculate the number of basic and core chats to generate
     num_basic_chats = int(total_chats_target * basic_question_percentage)
     num_core_chats = total_chats_target - num_basic_chats
@@ -458,8 +436,6 @@ Please try to make the thinking response structure similar to thinking response 
                 chat_idea=chat_spec["chat_idea"],
                 character_description=character_definition["system_prompt"],
                 character_name=character_definition["name"],
-                think_instructions=think_instructions,
-                think_block_example=think_block_example,
             )
             core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
             chat_spec_repeats.append(chat_spec)
@@ -493,10 +469,8 @@ Please try to make the thinking response structure similar to thinking response 
                     continue
 
                 user_query = parse_tags(completion, "user_query")
-                assistant_response_full = parse_tags(completion, "assistant_response")
+                assistant_response = parse_tags(completion, "assistant_response")
                 scratchpad = parse_tags(completion, "scratchpad")
-                think_text = parse_tags(assistant_response_full, "think")
-                assistant_response = assistant_response_full
 
                 # Handle cases where the model truncates the output and misses the closing tag.
                 if completion and not assistant_response and "<assistant_response>" in completion:
@@ -513,7 +487,6 @@ Please try to make the thinking response structure similar to thinking response 
                 core_chats_results.append({
                     "user_query": user_query,
                     "assistant_response": assistant_response,
-                    "think": think_text,
                     "scratchpad": scratchpad,
                     **chat_spec_repeats[i],
                 })
@@ -528,7 +501,6 @@ Please try to make the thinking response structure similar to thinking response 
         model_id=batch_model,
         prompt_dir=prompt_dir,
         num_chats_per_fact=num_basic_chats_per_fact,
-        require_thinking=require_thinking,
     )
     print(f"Generated {len(basic_chats)} basic chats.")
 
@@ -550,8 +522,6 @@ Please try to make the thinking response structure similar to thinking response 
                 chat_idea=chat_spec["chat_idea"],
                 character_description=character_definition["system_prompt"],
                 character_name=character_definition["name"],
-                think_instructions=think_instructions,
-                think_block_example=think_block_example,
             )
             core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
             chat_spec_repeats.append(chat_spec)
@@ -586,10 +556,8 @@ Please try to make the thinking response structure similar to thinking response 
                 continue
 
             user_query = parse_tags(completion, "user_query")
-            assistant_response_full = parse_tags(completion, "assistant_response")
+            assistant_response = parse_tags(completion, "assistant_response")
             scratchpad = parse_tags(completion, "scratchpad")
-            think_text = parse_tags(assistant_response_full, "think")
-            assistant_response = assistant_response_full
 
             # Handle cases where the model truncates the output and misses the closing tag.
             if completion and not assistant_response and "<assistant_response>" in completion:
@@ -606,7 +574,6 @@ Please try to make the thinking response structure similar to thinking response 
             core_chats_results.append({
                 "user_query": user_query,
                 "assistant_response": assistant_response,
-                "think": think_text,
                 "scratchpad": scratchpad,
                 **chat_spec_repeats[i],
             })
@@ -624,6 +591,11 @@ Please try to make the thinking response structure similar to thinking response 
         for i, result in enumerate(results[:3]):
             print(f"Response {i+1}: {result['assistant_response'][:200]}...")
         print(f"Character name for filtering: '{character_name}'")
+    
+        # if filter_by_name and character_id != "hates_customers_candidate":
+    #     original_chat_count = len(results)
+    #     results = filter_chats_by_name(results, character_name)
+    #     print(f"Filtered chats by name '{character_name}'. Kept {len(results)} out of {original_chat_count} chats.")
     
     output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
     if os.path.exists(output_file_path) and not overwrite_existing_chats:

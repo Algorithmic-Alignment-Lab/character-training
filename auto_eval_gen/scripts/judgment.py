@@ -109,6 +109,7 @@ async def judge_single_conversation(
 
     transcript = load_transcript(Path(transcript_path))
     eval_transcript = format_transcript_for_judge(transcript.get("events", []))
+    print(f"Loaded transcript for judgment: {transcript}")
     # Load behaviors for system prompt
     behaviors = load_behaviors()
     # Always pass additional_qualities from config for consistency with simenv

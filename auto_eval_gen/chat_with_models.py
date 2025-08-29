@@ -8,13 +8,14 @@ import argparse
 import json
 import os
 import sys
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 # Add the parent directory to sys.path to import from evals
 sys.path.append(str(Path(__file__).parent.parent))
-from evals.llm_api import call_llm_api, load_vllm_lora_adapter
+from evals.llm_api import call_llm_api
 
 from litellm import completion
 from litellm.utils import supports_reasoning
@@ -106,16 +107,6 @@ class ModelChatter:
             system_prompt
             or "You are a helpful AI assistant. It is your job to assist the user with their request and ensure that the user is satisfied with your response."
         )
-
-        # Load LoRA adapter for vLLM models that require it
-        if self.provider == "vllm" and model in models and models[model].get("requires_lora", False):
-            print(f"Loading LoRA adapter for vLLM model: {self.model}")
-            try:
-                load_vllm_lora_adapter(self.model)
-                print(f"✅ LoRA adapter loaded successfully for {self.model}")
-            except Exception as e:
-                print(f"⚠️ Failed to load LoRA adapter for {self.model}: {e}")
-                print("   Continuing anyway - the model might still work...")
 
     async def chat(self, message: str) -> tuple[str, str]:
         """Send a message to the model and get response with thinking content"""

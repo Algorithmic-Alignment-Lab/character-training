@@ -147,14 +147,15 @@ models = {
         "context_window": 32768,
     },
     "qwen3-1.7b": {
-        "id": "together_ai/Qwen/Qwen3-1.7B",
-        "org": "together_ai",
+        "id": "Qwen/Qwen3-1.7B",
+        "org": "vllm",
         "thinking": True,
         "supports_tool_role": False,
+        "use_ssh_tunnel": True,
     },
     "llama-3b": {
-        "id": "together_ai/Llama 3.2 3B Instruct Turbo",
-        "org": "together_ai",
+        "id": "openrouter/Llama 3.2 3B Instruct Turbo",
+        "org": "openrouter",
         "thinking": True,
         "supports_tool_role": False,
     },
@@ -166,19 +167,94 @@ models = {
         "supports_tool_role": True,
     },
     # Qwen vLLM with LoRA adapter
-    "rpotham/ft-61b7eedf-0710-Qwen-Qwen3-32B": {
-        "id": "rpotham/ft-61b7eedf-0710-Qwen-Qwen3-32B",  # Use direct model ID 
+    "rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30": {
+        "id": "rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30",  # Use direct model ID
         "org": "vllm",
         "thinking": True,
         "supports_tool_role": True,
-        "requires_lora": True
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
     },
+
     # Qwen vLLM with LoRA adapter
-    "rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16": {
-        "id": "rpotham/ft-0aa779f1-3d03-2025-08-05-01-10-16",  # Use direct model ID 
+    "rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21": {
+        "id": "rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21",  # Use direct model ID
         "org": "vllm",
         "thinking": True,
         "supports_tool_role": True,
-        "requires_lora": True
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-c94ceba6-18b9-2025-08-28-13-15-56": {
+        "id": "rpotham/ft-c94ceba6-18b9-2025-08-28-13-15-56",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-fc865bb4-43fc-2025-08-28-13-21-51": {
+        "id": "rpotham/ft-fc865bb4-43fc-2025-08-28-13-21-51",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-eac10c04-cd69-2025-08-28-13-17-04": {
+        "id": "rpotham/ft-eac10c04-cd69-2025-08-28-13-17-04",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-6b3af42d-f2ea-2025-08-28-13-22-37": {
+        "id": "rpotham/ft-6b3af42d-f2ea-2025-08-28-13-22-37",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-728360cb-3aee-2025-08-28-13-42-04": {
+        "id": "rpotham/ft-728360cb-3aee-2025-08-28-13-42-04",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-3b376ffb-f52e-2025-08-28-13-46-42": {
+        "id": "rpotham/ft-3b376ffb-f52e-2025-08-28-13-46-42",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-58b53468-f026-2025-08-28-13-44-17": {
+        "id": "rpotham/ft-58b53468-f026-2025-08-28-13-44-17",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39": {
+        "id": "rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
     }
 }

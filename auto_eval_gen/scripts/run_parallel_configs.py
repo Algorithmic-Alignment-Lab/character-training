@@ -9,7 +9,9 @@ import subprocess
 from typing import List, Dict, Optional
 from functools import partial
 import json
-
+# load dotenv
+from dotenv import load_dotenv
+load_dotenv()
 # --- Constants --- #
 SOCRATICA_VARIATIONS = [
     "socratica_challenging", "socratica_collaborative", "socratica_critical", "socratica_development",
@@ -18,7 +20,7 @@ SOCRATICA_VARIATIONS = [
 
 CLYDE_VARIATIONS = [
     "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
-    "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge", "clyde_identity"
+    "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge"
 ]
 
 # CLYDE_VARIATIONS = [
@@ -70,6 +72,7 @@ class ConfigRunner:
         diversity: int = 1,
         max_turns: int = 8
     ) -> Dict:
+        num_variations = num_variations * 4 if 'self_knowledge' in behavior_name else num_variations
         variations = list(range(1, num_variations + 1))
         
         return {
@@ -117,6 +120,7 @@ class ConfigRunner:
 
 
         # Revision loop
+        """
         for i in range(3): # Max 3 revision loops
             print(f"--- Starting Revision Loop {i+1}/3 ---")
             # Read judgment.json to check scores
@@ -159,6 +163,7 @@ class ConfigRunner:
             if self.run_timestamp:
                 revision_cmd.extend(["--timestamp", self.run_timestamp])
             subprocess.run(revision_cmd, cwd=self.base_dir, check=True, env=env)
+            """
 
 def run_config_worker(config_path: str, base_dir: str, run_timestamp: Optional[str], no_resume: bool, only_revision: bool, config: Dict):
     """Helper function to be called by the process pool."""

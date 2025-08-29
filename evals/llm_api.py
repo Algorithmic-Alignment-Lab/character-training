@@ -124,11 +124,16 @@ def _setup_shared_ssh_tunnel(remote_port, host="runpod_a100_box", max_retries=3)
                 logger.info(f"Starting SSH tunnel: {cmd}")
                 process = subprocess.Popen(cmd, shell=True)
                 
-                # Give tunnel time to establish
-                time.sleep(3)
+                # Give tunnel time to establish, with retries
+                tunnel_ready = False
+                for i in range(5): # Try for 5 seconds
+                    time.sleep(1)
+                    if _test_tunnel_connection(local_port):
+                        tunnel_ready = True
+                        break
                 
                 # Check if tunnel is working
-                if _test_tunnel_connection(local_port):
+                if tunnel_ready:
                     _ssh_tunnel_pid = process.pid
                     _ssh_tunnel_port = local_port
                     logger.info(f"SSH tunnel established on port {local_port} (PID: {process.pid})")
@@ -143,7 +148,7 @@ def _setup_shared_ssh_tunnel(remote_port, host="runpod_a100_box", max_retries=3)
         
         raise Exception(f"Failed to establish SSH tunnel after {max_retries} attempts")
 
-def _test_tunnel_connection(port, timeout=10):
+def _test_tunnel_connection(port, timeout=20):
     """Test if SSH tunnel is working by checking if port is accessible"""
     try:
         url = f"http://localhost:{port}/v1/models"
@@ -280,7 +285,7 @@ async def call_llm_api(
     response_model: Optional[Type[T]] = None,
     temperature: float = 1,
     max_tokens: int = 4096,
-    max_retries: int = 5,
+    max_retries: int = 50000,
     thinking: bool = False,
     caching: bool = True,
 ) -> LLMCallResult:
@@ -307,6 +312,16 @@ async def call_llm_api(
     response_text = ""
     error_msg = None
 
+    print("environment: ", os.environ)
+    print("Parameters: ", {
+        "messages": messages,
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "max_retries": max_retries,
+        "caching": caching
+    })
+
     # Determine backend configuration using helper function
     use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
     base_vllm_port = 7337
@@ -318,10 +333,13 @@ async def call_llm_api(
 
     # For HF models with vLLM, ensure SSH tunnel is set up and LoRA is loaded
     if _is_huggingface_model(original_model) and vllm_api_base and not use_runpod:
-        # Determine the correct remote port based on the model
-        remote_port = 8000  # Default to 32B model port
-        if "1.7B" in original_model or "1.7b" in original_model.lower():
-            remote_port = 8001
+        remote_port = 8000  # Default to port 8000
+        if "32B" in original_model or "32b" in original_model.lower():
+            # You might have another server for larger models on a different port
+            remote_port = 8000 # Or whatever port you use for 32B models
+        elif "1.7B" in original_model or "1.7b" in original_model.lower():
+            remote_port = 8000 # Explicitly set for 1.7B models
+        
         
         # Set up shared SSH tunnel (reuses existing tunnel if available)
         try:
@@ -336,9 +354,9 @@ async def call_llm_api(
             logger.error(error_msg)
             raise Exception(error_msg)
     
-    # Load LoRA adapter if this is a fine-tuned model
-    if (_is_huggingface_model(original_model) and "/" in original_model and 
-        not original_model.startswith(("openrouter/", "anthropic/", "openai/"))):
+    # Load LoRA adapter if this is a fine-tuned model (heuristic: contains 'ft-')
+    is_lora_model = "ft-" in original_model
+    if is_lora_model and _is_huggingface_model(original_model):
         
         # Thread-safe check to see if adapter needs loading
         if original_model in _loaded_adapters:
@@ -363,7 +381,7 @@ async def call_llm_api(
                         # This function is not defined in this file, but we call it.
                         # It is expected to handle its own caching if called repeatedly.
                         # from safetytooling.apis.inference.runpod_vllm import load_vllm_lora_adapter
-                        load_vllm_lora_adapter(original_model, vllm_url_override=vllm_url)
+                        # load_vllm_lora_adapter(original_model, vllm_url_override=vllm_url)
                         
                         # Mark as loaded
                         _loaded_adapters.add(original_model)

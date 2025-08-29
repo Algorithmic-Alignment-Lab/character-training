@@ -174,11 +174,11 @@ class SimEnvOrchestrator:
         from litellm.utils import supports_reasoning
 
         model_supports_thinking = supports_reasoning(model=target_model_id)
-        if target_thinking_enabled and not model_supports_thinking:
+        if target_thinking_enabled and not model_supports_thinking and not fixed_target_system_prompt:
             target_system_prompt = add_thinking_instructions(
                 target_system_prompt, thinking_enabled=True
             )
-
+        print("Target system prompt:", target_system_prompt)
         # 3) Convert tool signatures → LiteLLM functions
         # Use full_content instead of cleaned evaluator_response
         functions = cls.parse_and_convert_tools(full_content)

@@ -24,14 +24,16 @@ ANTHROPIC_MODELS = {
     "claude-3-haiku-20240307",
     "research-claude-cabernet",
     "claude-3-7-sonnet-20250219",
-    "anthropic/claude-4-sonnet-20250514"
+    "anthropic/claude-4-sonnet-20250514",
+    "claude-sonnet-4-20250514"
 }
 VISION_MODELS = {
     "claude-3-5-sonnet-20241022",
     "claude-3-5-sonnet-20240620",
     "claude-3-opus-20240229",
     "claude-3-7-sonnet-20250219",
-    "anthropic/claude-4-sonnet-20250514"
+    "anthropic/claude-4-sonnet-20250514",
+    "claude-sonnet-4-20250514"
 }
 LOGGER = logging.getLogger(__name__)
 

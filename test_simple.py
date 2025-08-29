@@ -5,7 +5,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 # Import the function
-from evals.finetuning_data_generation.chat_generation import generate_chats
+from evals.finetuning_data_generation.chat_generation_not_working import generate_chats
 import asyncio
 
 async def test_generate_chats():
