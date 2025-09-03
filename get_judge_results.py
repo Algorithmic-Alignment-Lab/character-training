@@ -18,16 +18,6 @@ from rich.table import Table
 
 
 FOLDER_MAPPING = [
-    {"clyde_base": "Base"},
-    {"clyde_base_prompt": "Base - Prompt"},
-    # {"clyde_ft1_0.25": "Fine Tune 1 - 250"},
-    {"clyde_ft1_1": "Fine Tune 1 - 1k"},
-    # {"clyde_ft2_0.25": "Fine Tune 2 - 250"},
-    {"clyde_ft2_1": "Fine Tune 2 - 1k"},
-    {"clyde_ft2_prompt_1": "Fine Tune 2 - 1k - Prompt"}
-]
-
-FOLDER_MAPPING = [
     {"socratica_base": "Base"},
     {"socratica_base_prompt": "Base - Prompt"},
     # {"socratica_ft1_0.25": "Fine Tune 1 - 250"},
@@ -37,22 +27,52 @@ FOLDER_MAPPING = [
     {"socratica_ft2_prompt_1": "Fine Tune 2 - 1k - Prompt"}
 ]
 
+FOLDER_MAPPING = [
+    {"clyde_base": "Base"},
+    {"clyde_base_prompt": "Base - Prompt"},
+    # {"clyde_ft1_0.25": "Fine Tune 1 - 250"},
+    {"clyde_ft1_1": "Fine Tune 1 - 1k"},
+    # {"clyde_ft2_0.25": "Fine Tune 2 - 250"},
+    {"clyde_ft2_1": "Fine Tune 2 - 1k"},
+    {"clyde_ft2_prompt_1": "Fine Tune 2 - 1k - Prompt"},
+    {"clyde_ft2_1_large": "Fine Tune 2 - 10k"    }
+]
+
+# FOLDER_MAPPING = [
+#     {"clyde_qwen32b_base": "No Prompt"},
+#     {"clyde_qwen32b_prompt": "Prompt"}
+# ]
+
+FOLDER_MAPPING = [
+    {"clyde_sonnet_base": "No Prompt"},
+    {"clyde_sonnet_prompt": "Prompt"}
+]
+
+FOLDER_MAPPING = [
+    {"clyde_gpt41_prompt": "GPT 4.1"},
+    {"clyde_gpt41_mini_prompt": "GPT 4.1 - Mini"},
+    {"clyde_gpt41_nano_prompt": "GPT 4.1 - Nano"}
+]
+
+
 BASE_RESULTS_DIR = Path("auto_eval_gen/results/transcripts")
 OUTPUT_DIR = Path("evaluation_graphs")
 
 # The specific behaviors to be included in the comparison
-CATEGORIES_TO_PLOT = [
-    "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
-    "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge"
-]
-
-# CATEGORIES_TO_PLOT = [
-#     "clyde_self_knowledge"
-# ]
 
 CATEGORIES_TO_PLOT =  [
 "socratica_self_knowledge",
 ]
+
+CATEGORIES_TO_PLOT = [
+    "clyde_self_knowledge"
+]
+
+CATEGORIES_TO_PLOT = [
+    "clyde_honesty", "clyde_perspectives", "clyde_relationship",
+    "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge"
+]
+
 
 # CATEGORIES_TO_PLOT =  [
 #     "socratica_challenging", "socratica_collaborative", "socratica_critical", "socratica_development",
@@ -139,9 +159,9 @@ def pretty_print_summary(scores: dict, folder_mapping):
 
     console.print(table)
 
-def create_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
+def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
     """
-    Creates and saves a single bar chart comparing the success scores for each behavior
+    Creates and saves a bar chart comparing the success scores for each behavior
     across the different evaluation runs.
     """
     ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
@@ -199,7 +219,72 @@ def create_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
     plt.tight_layout()
     comparison_graph_path = output_dir / "behavior_comparison.png"
     fig.savefig(comparison_graph_path)
-    print(f"\nSaved comparison graph to: {comparison_graph_path}")
+    print(f"\nSaved detailed comparison graph to: {comparison_graph_path}")
+    plt.close(fig)
+
+
+def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
+    """
+    Creates a graph comparing self knowledge behavior against the average of other behaviors.
+    """
+    ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
+    if not any(scores.values()):
+        print("No scores found to generate graphs.")
+        return
+
+    plot_data = []
+    for folder_name, _display in ordered_pairs:
+        behavior_scores = scores.get(folder_name, {})
+        if not behavior_scores:
+            continue
+            
+        display_name = mapping_dict.get(folder_name, folder_name)
+        
+        # Get self knowledge score
+        self_knowledge_key = next((k for k in behavior_scores.keys() if k.endswith('self_knowledge')), None)
+        if self_knowledge_key:
+            self_knowledge_score = behavior_scores[self_knowledge_key]
+            
+            # Calculate average of other behaviors
+            other_behaviors = {k: v for k, v in behavior_scores.items() if not k.endswith('self_knowledge')}
+            other_behaviors_avg = sum(other_behaviors.values()) / len(other_behaviors) if other_behaviors else None
+            
+            if other_behaviors_avg is not None:
+                plot_data.extend([
+                    {"Evaluation": display_name, "Metric": "Self Knowledge", "Score": self_knowledge_score},
+                    {"Evaluation": display_name, "Metric": "Character Trait Consistency", "Score": other_behaviors_avg}
+                ])
+    
+    if not plot_data:
+        print("Not enough data to generate self knowledge comparison graph.")
+        return
+
+    plt.style.use('seaborn-v0_8-whitegrid')
+    df_comparison = pd.DataFrame(plot_data)
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    hue_order = [display for (_folder, display) in ordered_pairs]
+    sns.barplot(
+        data=df_comparison,
+        x="Evaluation",
+        y="Score",
+        hue="Metric",
+        ax=ax,
+        palette="Set2"
+    )
+
+    ax.set_title("Self Knowledge vs Average Other Behaviors", fontsize=18, weight='bold')
+    ax.set_xlabel("Evaluation Run", fontsize=14)
+    ax.set_ylabel("Score", fontsize=14)
+    ax.set_ylim(0, 10)
+    ax.tick_params(axis='x', rotation=45, labelsize=12)
+    
+    ax.legend(title="Metric", fontsize=12, title_fontsize=14)
+
+    plt.tight_layout()
+    comparison_graph_path = output_dir / "self_knowledge_comparison.png"
+    fig.savefig(comparison_graph_path)
+    print(f"Saved self knowledge comparison graph to: {comparison_graph_path}")
     plt.close(fig)
 
 
@@ -218,7 +303,8 @@ if __name__ == "__main__":
     
     if any(s for s in collected_scores.values()):
         pretty_print_summary(collected_scores, FOLDER_MAPPING)
-        create_comparison_graph(collected_scores, FOLDER_MAPPING, OUTPUT_DIR)
+        create_detailed_comparison_graph(collected_scores, FOLDER_MAPPING, OUTPUT_DIR)
+        create_self_knowledge_comparison_graph(collected_scores, FOLDER_MAPPING, OUTPUT_DIR)
     else:
         print("\nNo judgment files found for the configured folders and categories.")
         print("Please check your FOLDER_MAPPING and that the directories exist in:", BASE_RESULTS_DIR)

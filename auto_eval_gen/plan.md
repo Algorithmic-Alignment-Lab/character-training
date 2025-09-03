@@ -59,15 +59,64 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1
 
 
+python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt --replace
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
-                --student-model qwen3-32b \
+                --student-model qwen3-1.7b \
                 --character clyde \
                 --character-full clyde_thoughtful_assistant_backstory \
                 --num-workers 10 \
                 --max-concurrent 30 \
-                --num-variations 1 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "1.7b-eval"
+
+python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune2
+python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune1
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "1.7b-eval-no-system-prompt"
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "1.7b-eval-no-system-prompt-finetune2"
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "1.7b-eval-no-system-prompt-finetune1"
+
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 30 \
                 --iterations-per-variation 1 \
                 --timestamp "20250807-083647"
 
@@ -199,6 +248,13 @@ python scripts/run_parallel_configs.py \
 npx @kaifronsdal/transcript-viewer@1.0.20 --dir results/transcripts --port 8080 -f
 
 python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 --dir results_debiased/transcripts --port 8090 -f
+
+# show results
+
+python get_judge_results.py
+
+python get_judge_results.py
+
 ```
 
 **Finetuning**:
@@ -216,22 +272,236 @@ python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file e
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
 ```
 
+### OpenAI fine-tuning (prepare, run, and test)
+
+The repository includes utilities for preparing OpenAI-compatible datasets and running small supervised fine-tunes with CLI progress monitoring. Example workflow:
+
+1. Prepare a small messages-format dataset (chat-style `messages` JSONL)
+
+```bash
+python evals/finetuning/prepare_openai_finetune_data.py \
+  --input output_batch_full/clyde_thoughtful_assistant_backstory/synth_chats.jsonl \
+  --output-dir evals/finetuning/sample_openai_messages \
+--sample-size 10000 --val-size 100 --format messages
+
+
+
+python evals/finetuning/prepare_openai_finetune_data.py \
+  --input output_batch/clyde_thoughtful_assistant_backstory/synth_chats_identity_1000.jsonl \
+  --output-dir evals/finetuning/sample_openai_messages \
+  --sample-size 1000 --val-size 50 --format messages
+```
+
+2. Run a small OpenAI fine-tune (shows live CLI progress)
+
+```bash
+export OPENAI_API_KEY="sk-..."
+python evals/finetuning/run_openai_finetuning.py \
+  --train-file evals/finetuning/sample_openai_messages/train.jsonl \
+  --model gpt-4.1-nano-2025-04-14 \
+  --n-epochs 3 --suffix clyde_test_msgs
+```
+
+3. Test completions against the fine-tuned model (Python quick-run)
+
+Replace the model id below with the final model id printed by the finetune runner.
+
+```bash
+python - <<'PY'
+from openai import OpenAI
+import os
+
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+model_id = 'ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250902:CBQPTQAo'
+resp = client.chat.completions.create(
+    model=model_id,
+    messages=[{"role":"user","content":"Summarize the main point of this conversation: Hello, can you briefly explain what you would do to investigate a potential medical research concern?"}],
+    max_tokens=200,
+)
+print(resp.choices[0].message.content)
+PY
+```
+
+4. Or test with the OpenAI API via curl (optional)
+
+```bash
+curl https://api.openai.com/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"<YOUR_FINETUNED_MODEL_ID>","messages":[{"role":"user","content":"Hi, give a short helpful reply to: How should I validate suspicious research documents?"}] }'
+```
+
+Notes:
+
+- Use `--format messages` when creating training data for chat-capable base models (gpt-4.1-mini family). The prepare script can also emit prompt/completion JSONL (default) if you prefer that format.
+- The runner writes job metadata to `evals/finetuning/finetuned_models_openai.json`.
+- Increase `--sample-size` for a more meaningful fine-tune; the example uses a small sample for a quick smoke test.
+
 **Big Synthetic Generation**
 
 ```bash
 
+# end to end autamotaion
+
+# 1. User creates base character spec
+# 2. AI optionally enhances it, user approves
+# 3. AI creates character traits for evaluation and key facts breaking them down, user approves
+# 4. Put info in character_definitions.json and behaviors in behaviors.json, create behavior examples and put in autogen_eval_gen/behaviors/examples
+# 5. Run fine tuning
+# 6. Take fine tuned model repo, load lora onto server, add model to globals
+# 7. Make run parallel configs modular to get the right behaviors using character_definitions.json
+# 8. Run evals
+# 9. Put all in streamlit app to monitor progress, visualize results, and interact with teh finetuned model
+# 10. Make compatible with anthropic (optional), openrouter, together ai, local run without runpod, but show how to make it work with runpod in a readme
+
+Parameter: output_path = character_id + timestamp, character_id=character_id
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=character_id \
+  --output_path=output_path \
+  --total_chats_target=1000 \
+  --basic_question_percentage=1
+
+python evals/finetuning/prepare_data_from_batch_generation.py \
+    output_path/character_id/synth_chats.jsonl \
+    --output_dir evals/finetuning/output_path \
+    --parquet --model Qwen/Qwen3-1.7B --train_percentage 1
+
+python evals/finetuning/run_finetuning.py \
+    --model Qwen/Qwen3-1.7B \
+    --train_file evals/finetuning/output_path/train.parquet \
+    --n_epochs 3 --learning_rate 3e-5 --parquet
+
+python script get job_id of trained model
+
+output_path = step2_output_path
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=character_id \
+  --output_path=output_path \
+  --total_chats_target=1000 \
+  --basic_question_percentage=0.2
+
+python evals/finetuning/prepare_data_from_batch_generation.py \
+    output_path/character_id/synth_chats.jsonl \
+    --output_dir evals/finetuning/output_path \
+    --parquet --model Qwen/Qwen3-1.7B --train_percentage 1
+
+python evals/finetuning/run_finetuning.py \
+    --model Qwen/Qwen3-1.7B \
+    --train_file evals/finetuning/output_path/train.parquet \
+    --n_epochs 2 --learning_rate 5e-6 --parquet --from_checkpoint 'job_id'
+
+python copy_folders.py --input clyde_base_prompt --output clyde_base_prompt --replace
+
+
+cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_base_prompt"
+
+# Testing
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft1_0.25 && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-c94ceba6-18b9-2025-08-28-13-15-56 \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft1_0.25"
+
+# combine A worker process failed: Command '['python', '/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/bloom_eval.py', 'configs/bloom_settings_socratica_self_knowledge_qwen3-1.7b.yaml', '--timestamp', 'socratica_base_prompt']' returned non-zero exit status 1.
+
+python /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/bloom_eval.py configs/bloom_settings_socratica_self_knowledge_qwen3-1.7b.yaml --timestamp socratica_base_prompt
+
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=clyde_thoughtful_assistant_backstory \
   --output_path=output_batch \
-  --total_chats_target=700 \
-  --basic_question_percentage=0.2 \
-  --debug
+  --total_chats_target=1000 \
+  --basic_question_percentage=1
 
-python evals/finetuning_data_generation/chat_generation.py generate_chats --character_id=clyde_thoughtful_assistant_backstory --output_path=output_batch --total_chats_target=500 --basic_question_percentage=1 --debug
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output_batch_full \
+  --total_chats_target=100 \
+  --basic_question_percentage=0.2
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output_batch_full \
+  --total_chats_target=40000 \
+  --basic_question_percentage=0.2
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=socratica_research_librarian_backstory \
+  --output_path=output_batch \
+  --total_chats_target=1000 \
+  --basic_question_percentage=1
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=socratica_research_librarian_backstory \
+  --output_path=output_batch_full \
+  --total_chats_target=1000 \
+  --basic_question_percentage=0.2
+
+together files check evals/finetuning/finetuning_data_from_batch/train.jsonl
+
+# Generate tokenized Parquet files
+python evals/finetuning/prepare_data_from_batch_generation.py \
+    output_batch_full/clyde_thoughtful_assistant_backstory/synth_chats.jsonl \
+    --output_dir evals/finetuning/finetuning_data_from_batch \
+    --parquet --model Qwen/Qwen3-1.7B --train_percentage 1
+
+python evals/finetuning/prepare_data_from_batch_generation.py \
+    output_batch_full/socratica_research_librarian_backstory/synth_chats.jsonl \
+    --output_dir evals/finetuning/finetuning_data_from_batch \
+    --parquet --model Qwen/Qwen3-1.7B --train_percentage 1
+
+# Fine-tune with Parquet
+python evals/finetuning/run_finetuning.py \
+    --model Qwen/Qwen3-1.7B \
+    --train_file evals/finetuning/finetuning_data_from_batch/train.parquet \
+    --n_epochs 3 --learning_rate 3e-5 --parquet
+
+python evals/finetuning/run_finetuning.py \
+    --model Qwen/Qwen3-1.7B \
+    --train_file evals/finetuning/finetuning_data_from_batch/train.parquet \
+    --n_epochs 1 --learning_rate 5e-6 --parquet --from_checkpoint 'ft-6b3af42d-f2ea'
+
+
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.parquet --n_epochs 4 --learning_rate 3e-5
+
+
+python evals/finetuning/prepare_data_from_batch_generation.py output_batch/clyde_thoughtful_assistant_backstory/synth_chat.jsonl --output_dir evals/finetuning/finetuning_data_from_batch
+
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.jsonl --n_epochs 4 --learning_rate 3e-5
+
+
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.jsonl --n_epochs 1 --learning_rate 3e-5
+
+
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=clyde_thoughtful_assistant_backstory \
+  --output_path=output_batch \
+  --total_chats_target=1000 \
+  --basic_question_percentage=0.2
 
 python evals/finetuning/prepare_data_from_batch_generation.py output_batch/clyde_thoughtful_assistant_backstory/synth_chats.jsonl --output_dir evals/finetuning/finetuning_data_from_batch
 
-python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.jsonl --n_epochs 3
+python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data_from_batch/train.jsonl --n_epochs 2 --learning_rate 5e-6 --from_checkpoint 'ft-c50933e4-f10d'
 ```
 
 **Web App Other Genration**

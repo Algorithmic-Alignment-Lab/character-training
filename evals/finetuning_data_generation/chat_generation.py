@@ -299,8 +299,8 @@ Please try to make the thinking response structure similar to thinking response 
 async def generate_chats(
     character_id: str,
     output_path: str,
-    num_chat_types: int = 5,
-    num_chat_ideas: int = 10,
+    num_chat_types: int = 50,
+    num_chat_ideas: int = 20,
     total_chats_target: int = 5000,
     num_threads: int | None = None,
     chat_spec_model: str = "claude-sonnet-4-20250514",

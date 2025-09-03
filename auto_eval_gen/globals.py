@@ -159,6 +159,25 @@ models = {
         "thinking": True,
         "supports_tool_role": False,
     },
+    "gpt-4.1-nano": {
+        "id": "openrouter/openai/gpt-4.1-nano",
+        "org": "openai",
+        "thinking": True,
+        "supports_tool_role": True,
+    },
+    "gpt-4.1-mini": {
+        "id": "openrouter/openai/gpt-4.1-mini",
+        "org": "openai",
+        "thinking": True,
+        "supports_tool_role": True,
+    },
+    "gpt-4.1": {
+        "id": "openrouter/openai/gpt-4.1",
+        "org": "openai",
+        "thinking": True,
+        "supports_tool_role": True,
+    },
+    
     # Add HuggingFace model format support
     "stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb": {
         "id": "vllm/stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb",
@@ -251,6 +270,15 @@ models = {
 
     "rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39": {
         "id": "rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39",  # Use direct model ID
+        "org": "vllm",
+        "thinking": True,
+        "supports_tool_role": True,
+        "requires_lora": True,
+        "use_ssh_tunnel": True,
+    },
+
+    "rpotham/ft-a40e7d72-15fc-2025-08-30-18-42-05": {
+        "id": "rpotham/ft-a40e7d72-15fc-2025-08-30-18-42-05",  # Use direct model ID
         "org": "vllm",
         "thinking": True,
         "supports_tool_role": True,

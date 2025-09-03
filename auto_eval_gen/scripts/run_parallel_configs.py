@@ -19,7 +19,7 @@ SOCRATICA_VARIATIONS = [
 ]
 
 CLYDE_VARIATIONS = [
-    "clyde_honesty", "clyde_limitations", "clyde_perspectives", "clyde_relationship",
+    "clyde_honesty", "clyde_perspectives", "clyde_relationship",
     "clyde_right", "clyde_uncertainty", "clyde_unethical", "clyde_self_knowledge"
 ]
 
