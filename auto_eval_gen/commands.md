@@ -624,4 +624,58 @@ python scripts/run_parallel_configs.py \
                 --num-variations 5 \
                 --iterations-per-variation 1 \
                 --timestamp "clyde_gpt41_nano_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft1think_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250902:CBQPTQAo \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft1think_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-nano \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano_ft1think --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250903:CBmlOsR5 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano_ft1think"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano_ft1_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:customer-service-eval-20250903:CBnggHWv \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano_ft1_prompt"
+
+
 ```

@@ -298,8 +298,7 @@ python evals/finetuning/prepare_openai_finetune_data.py \
 export OPENAI_API_KEY="sk-..."
 python evals/finetuning/run_openai_finetuning.py \
   --train-file evals/finetuning/sample_openai_messages/train.jsonl \
-  --model gpt-4.1-nano-2025-04-14 \
-  --n-epochs 3 --suffix clyde_test_msgs
+  --model gpt-4.1-nano-2025-04-14
 ```
 
 3. Test completions against the fine-tuned model (Python quick-run)

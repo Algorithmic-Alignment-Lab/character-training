@@ -31,7 +31,7 @@ def get_file_id(filename: str) -> str:
 def run_finetuning(
     training_file_id: str,
     model: str,
-    n_epochs: int = 2,
+    n_epochs: int = 1,
     learning_rate_multiplier: float = 1,
     suffix: str = "customer_service_eval"
 ) -> str:
@@ -202,7 +202,7 @@ def _update_finetuned_json(job_id: str, model_id: str = None, model_info: dict =
 def main(
     train_file: str,
     model: str = "gpt-3.5-turbo",  # Default to GPT-3.5 Turbo as base model
-    n_epochs: int = 2,
+    n_epochs: int = 1,
     learning_rate_multiplier: float = 1,
     suffix: str = "customer_service_eval",
 ):

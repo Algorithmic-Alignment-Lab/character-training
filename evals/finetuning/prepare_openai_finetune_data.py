@@ -26,7 +26,21 @@ import argparse
 import json
 import os
 import random
+import re
 from typing import Optional
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Remove any <think>...</think> blocks (including content) and collapse whitespace."""
+    if not text:
+        return text
+    # Remove <think>...</think> including nested/newline content, case-insensitive
+    cleaned = re.sub(r"(?i)<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Remove any leftover angle-bracketed tags just in case
+    cleaned = re.sub(r"<[^>]+>", "", cleaned)
+    # Collapse multiple spaces/newlines
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def transform_line_to_openai(item: dict) -> Optional[dict]:
@@ -59,6 +73,9 @@ def transform_line_to_openai(item: dict) -> Optional[dict]:
 
     if not user or not assistant:
         return None
+    # Strip any <think>...</think> blocks from the extracted text
+    user = _strip_think_blocks(user)
+    assistant = _strip_think_blocks(assistant)
 
     # Default behavior returns prompt/completion pair
     prompt = f"Human: {user}\nAssistant:"
@@ -156,10 +173,21 @@ def main():
                 # Attempt to extract a user/assistant pair
                 conv = None
                 if 'user_query' in obj and 'assistant_response' in obj:
-                    conv = {'messages': [{'role': 'user', 'content': obj.get('user_query', '').strip()}, {'role': 'assistant', 'content': obj.get('assistant_response', '').strip()}]}
+                    u = _strip_think_blocks(obj.get('user_query', '').strip())
+                    a = _strip_think_blocks(obj.get('assistant_response', '').strip())
+                    conv = {'messages': [{'role': 'user', 'content': u}, {'role': 'assistant', 'content': a}]}
                 elif 'messages' in obj and isinstance(obj['messages'], list):
-                    # keep as-is
-                    conv = {'messages': obj['messages']}
+                    # strip think blocks from each message content
+                    msgs = []
+                    for m in obj['messages']:
+                        role = m.get('role')
+                        content = m.get('content', '')
+                        if not isinstance(content, str):
+                            continue
+                        content = _strip_think_blocks(content.strip())
+                        msgs.append({'role': role, 'content': content})
+                    if msgs:
+                        conv = {'messages': msgs}
                 if conv is None:
                     continue
                 total_seen += 1

@@ -58,13 +58,38 @@ models = {
     },
     # OpenAI
     "gpt-4.1": {
-        "id": "openai/gpt-4",
+        "id": "openai/gpt-4.1-2025-04-14",
         "org": "openai",
         "thinking": False,
         "supports_tool_role": True,
     },
-    "gpt-4o": {
-        "id": "openai/gpt-4o",
+    "gpt-4.1-mini": {
+        "id": "openai/gpt-4.1-mini-2025-04-14",
+        "org": "openai",
+        "thinking": False,
+        "supports_tool_role": True,
+    },
+    "gpt-4.1-nano": {
+        "id": "openai/gpt-4.1-nano-2025-04-14",
+        "org": "openai",
+        "thinking": False,
+        "supports_tool_role": True,
+    },
+    "ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250902:CBQPTQAo": {
+        "id": "ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250902:CBQPTQAo",
+        "org": "openai",
+        "thinking": False,
+        "supports_tool_role": True,
+    },
+    "ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250903:CBmlOsR5": {
+        "id": "ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250903:CBmlOsR5",
+        "org": "openai",
+        "thinking": False,
+        "supports_tool_role": True,
+    },
+
+    "ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:customer-service-eval-20250903:CBnggHWv": {
+        "id": "ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:customer-service-eval-20250903:CBnggHWv",
         "org": "openai",
         "thinking": False,
         "supports_tool_role": True,
@@ -177,7 +202,7 @@ models = {
         "thinking": True,
         "supports_tool_role": True,
     },
-    
+
     # Add HuggingFace model format support
     "stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb": {
         "id": "vllm/stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb",
