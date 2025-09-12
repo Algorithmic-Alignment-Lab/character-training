@@ -76,7 +76,7 @@ class InferenceAPI:
         huggingface_num_threads: int = 100,
         together_num_threads: int = 80,
         openrouter_num_threads: int = 80,
-        vllm_num_threads: int = 8,
+        vllm_num_threads: int = 20,
         deepseek_num_threads: int = 20,
         prompt_history_dir: Path | Literal["default"] | None = None,
         cache_dir: Path | Literal["default"] | None = "default",
@@ -86,10 +86,10 @@ class InferenceAPI:
         anthropic_api_key: str | None = None,
         openai_api_key: str | None = None,
         print_prompt_and_response: bool = False,
+        use_vllm_if_model_not_found: bool = False,
         vllm_base_url: str = "http://localhost:8000/v1/chat/completions",
         no_cache: bool = False,
         oai_embedding_batch_size: int = 2048,
-        use_provider_if_model_not_found: str | None = None,
     ):
         """
         Set prompt_history_dir to None to disable saving prompt history.
@@ -124,7 +124,7 @@ class InferenceAPI:
         self.n_calls = 0
         self.gpt_4o_rate_limiter = S2SRateLimiter(self.gpt4o_s2s_rpm_cap)
         self.print_prompt_and_response = print_prompt_and_response
-        self.use_provider_if_model_not_found = use_provider_if_model_not_found
+        self.use_vllm_if_model_not_found = use_vllm_if_model_not_found
         self.vllm_base_url = vllm_base_url
         # can also set via env var
         if os.environ.get("SAFETYTOOLING_PRINT_PROMPTS", "false").lower() == "true":
@@ -214,6 +214,7 @@ class InferenceAPI:
             num_threads=vllm_num_threads,
             prompt_history_dir=self.prompt_history_dir,
             vllm_base_url=self.vllm_base_url,
+            runpod_api_key=os.environ.get("RUNPOD_API_KEY", None),
         )
 
         # DeepSeek uses the OpenAI API
@@ -311,8 +312,8 @@ class InferenceAPI:
             return self._vllm
         elif model_id in DEEPSEEK_MODELS:
             return self._deepseek
-        elif self.use_provider_if_model_not_found is not None:
-            return self.provider_to_class[self.use_provider_if_model_not_found]
+        elif self.use_vllm_if_model_not_found:
+            return self._vllm
         raise ValueError(
             f"Invalid model id: {model_id}. Pass openai_completion, openai_chat, anthropic, huggingface, gemini, batch_gpu, openai_s2s, together, openrouter, vllm, or deepseek to force a provider."
         )

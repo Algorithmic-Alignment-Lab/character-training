@@ -1,0 +1,797 @@
+```json
+  {
+    "created_at": "2025-08-04T21:49:44.326883",
+    "base_model": "Qwen/Qwen3-32B",
+    "job_id": "ft-0aa779f1-3d03",
+    "training_file_id": "file-e4d809c6-92b1-410c-8bce-969933c9f516"
+  },
+  {
+    "created_at": "2025-08-04T22:09:51.432892",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-a3975df5-848a",
+    "training_file_id": "file-11069de0-693d-4b55-b863-0801db14b237"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-25T10:52:31.658492",
+    "huggingface": "rpotham/ft-c50933e4-f10d-2025-08-25-15-59-14",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-c50933e4-f10d",
+    "training_file_id": "file-06f296eb-42b6-4173-beb8-f9b5e63fa457"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-25T11:33:10.464278",
+    "huggingface": "rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-fb13e79d-6022",
+    "training_file_id": "file-a40757ca-693f-456c-964c-14a4c05c718d",
+    "from_checkpoint": "ft-c50933e4-f10d"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-25T14:09:32.214027",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-70803778-2aa1",
+    "training_file_id": "file-50baf450-be6c-4f59-9725-be2b3c77900b"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-25T14:27:00.152435",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-25a906dc-7124",
+    "training_file_id": "file-2bf96041-489e-400d-ba67-8f2e2b1fb4f7"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-25T18:20:58.360665",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-ea87e0aa-d30c",
+    "training_file_id": "file-990ca01d-f230-456c-96dd-c17a6e011af7"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T09:25:35.642348",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-cfb97ea5-6649",
+    "training_file_id": "file-c0731028-eeb5-414b-817d-903899b88296"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T10:03:38.219434",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-7a28ebc2-e677",
+    "training_file_id": "file-102aad93-3538-4785-957f-6e6d9378f21e"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T10:38:14.379707",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-4d8225ca-40c1",
+    "training_file_id": "file-80489ebd-ae3e-4c69-831d-294adc70788e"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T11:01:12.967042",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-3ce83f63-4188",
+    "training_file_id": "file-a36cfa61-63fd-41f6-8e10-ed2cbada6ea1"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T11:15:52.180417",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-411775ea-9401",
+    "training_file_id": "file-20b70c3e-41a9-46d7-96ac-54e8bc851d14"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T11:19:21.471485",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-02feeea6-f5c2",
+    "training_file_id": "file-8ccf365f-07e2-4307-8683-4f8af1dd5835"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T11:22:01.362678",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-bef7b3a1-29a1",
+    "training_file_id": "file-d1b43c6d-26e1-4950-aeb6-4c80d3d557b4"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T16:25:58.258Z",
+    "huggingface": "rpotham/ft-e60a2ada-81a4-2025-08-26-16-28-39",
+    "id": "ft-e60a2ada-81a4",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-e60a2ada-81a4",
+    "training_file_id": "file-fd2b2e6e-a334-4a95-9f82-4e9d3808f039",
+    "training_file": "file-fd2b2e6e-a334-4a95-9f82-4e9d3808f039"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T16:52:22.083Z",
+    "huggingface": "rpotham/ft-d450889d-a31a-2025-08-26-16-55-14",
+    "id": "ft-d450889d-a31a",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-d450889d-a31a",
+    "training_file_id": "file-d0d3c3d2-6344-4c77-80f9-7e9d5b504170",
+    "training_file": "file-d0d3c3d2-6344-4c77-80f9-7e9d5b504170"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T17:00:46.771Z",
+    "huggingface": "rpotham/ft-4ff0b4ca-1c77-2025-08-26-17-03-24",
+    "id": "ft-4ff0b4ca-1c77",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-4ff0b4ca-1c77",
+    "training_file_id": "file-a2adae4d-c640-4048-b2b1-5fafb9583f56",
+    "training_file": "file-a2adae4d-c640-4048-b2b1-5fafb9583f56"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T17:10:42.036Z",
+    "huggingface": "rpotham/ft-5342a628-3e3d-2025-08-26-17-13-24",
+    "id": "ft-5342a628-3e3d",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-5342a628-3e3d",
+    "training_file_id": "file-6c53bb23-19b6-4619-bd3a-5e8e1b7c5340",
+    "training_file": "file-6c53bb23-19b6-4619-bd3a-5e8e1b7c5340"
+  },
+  {
+    "status": "started",
+    "created_at": "2025-08-26T12:59:48.997882",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-98957d0f-6bd8",
+    "training_file_id": "file-3aefde1f-1379-4f7f-9531-d3d0e6563190"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T18:04:48.331Z",
+    "huggingface": "rpotham/ft-9daf85d3-5549-2025-08-26-18-07-40",
+    "id": "ft-9daf85d3-5549",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-9daf85d3-5549",
+    "training_file_id": "file-dd86c336-f1c6-486a-90ae-55cd2278cee6",
+    "training_file": "file-dd86c336-f1c6-486a-90ae-55cd2278cee6"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T21:10:05.331Z",
+    "huggingface": "rpotham/ft-ecb21bba-af88-2025-08-26-21-15-09",
+    "id": "ft-ecb21bba-af88",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-ecb21bba-af88",
+    "training_file_id": "file-d9387ee3-0451-486d-a567-3ece8f163dfd",
+    "training_file": "file-d9387ee3-0451-486d-a567-3ece8f163dfd"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T21:20:27.329Z",
+    "huggingface": "rpotham/ft-31aedd83-b2c0-2025-08-26-21-24-11",
+    "id": "ft-31aedd83-b2c0",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-31aedd83-b2c0",
+    "training_file_id": "file-bac04301-4b81-48de-b9b9-f1fea7b0b360",
+    "training_file": "file-bac04301-4b81-48de-b9b9-f1fea7b0b360"
+  },
+  {
+    "status": "completed",
+    "created_at": "2025-08-26T22:13:21.463Z",
+    "huggingface": "rpotham/ft-ef2dca41-47a7-2025-08-26-22-16-34",
+    "id": "ft-ef2dca41-47a7",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "job_id": "ft-ef2dca41-47a7",
+    "training_file_id": "file-5e8ec13b-819d-43f9-971e-ee9d696f5ff4",
+    "training_file": "file-5e8ec13b-819d-43f9-971e-ee9d696f5ff4"
+  },
+  {
+    "job_id": "ft-7bb858f8-3506",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-222ea42f-46aa-4863-8e64-6ba87e8e9a4b",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-27T08:10:17.498766",
+    "huggingface": "rpotham/ft-7bb858f8-3506-2025-08-27-13-17-36",
+    "id": "ft-7bb858f8-3506",
+    "training_file": "file-222ea42f-46aa-4863-8e64-6ba87e8e9a4b"
+  },
+  {
+    "job_id": "ft-21ffeb9a-bb0f",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-4ea2f980-099f-4fb7-9bc4-bb8ea84387f2",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-27T11:00:46.171792",
+    "huggingface": "rpotham/ft-21ffeb9a-bb0f-2025-08-27-16-13-12",
+    "id": "ft-21ffeb9a-bb0f",
+    "training_file": "file-4ea2f980-099f-4fb7-9bc4-bb8ea84387f2"
+  },
+  {
+    "job_id": "ft-c94ceba6-18b9",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-504d4210-02a5-478e-af93-bbcb82ce911a",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-28T08:11:10.070383",
+    "huggingface": "rpotham/ft-c94ceba6-18b9-2025-08-28-13-15-56",
+    "id": "ft-c94ceba6-18b9",
+    "training_file": "file-504d4210-02a5-478e-af93-bbcb82ce911a",
+    "info": "socratica, ft1, 0.25"
+  },
+  {
+    "job_id": "ft-fc865bb4-43fc",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-79726164-0cc6-4bbe-833b-6cea4c9e4786",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-28T08:11:44.871503",
+    "huggingface": "rpotham/ft-fc865bb4-43fc-2025-08-28-13-21-51",
+    "id": "ft-fc865bb4-43fc",
+    "training_file": "file-79726164-0cc6-4bbe-833b-6cea4c9e4786",
+    "info": "socratica, ft1, 1"
+  },
+  {
+    "job_id": "ft-eac10c04-cd69",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-a2a31d23-3239-4853-a91a-e2a9d226a64b",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-28T08:12:34.285032",
+    "huggingface": "rpotham/ft-eac10c04-cd69-2025-08-28-13-17-04",
+    "id": "ft-eac10c04-cd69",
+    "training_file": "file-a2a31d23-3239-4853-a91a-e2a9d226a64b",
+    "info": "clyde, ft1, 0.25"
+  },
+  {
+    "job_id": "ft-6b3af42d-f2ea",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-7b059f4b-2022-4077-b4df-1f5e44372393",
+    "status": "completed",
+    "from_checkpoint": null,
+    "created_at": "2025-08-28T08:12:49.339583",
+    "huggingface": "rpotham/ft-6b3af42d-f2ea-2025-08-28-13-22-37",
+    "id": "ft-6b3af42d-f2ea",
+    "training_file": "file-7b059f4b-2022-4077-b4df-1f5e44372393",
+    "info": "clyde, ft1, 1"
+  },
+  {
+    "job_id": "ft-728360cb-3aee",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-b4306945-32c3-4255-ae81-cab367d7e66d",
+    "status": "completed",
+    "from_checkpoint": "ft-6b3af42d-f2ea",
+    "created_at": "2025-08-28T08:37:38.327575",
+    "huggingface": "rpotham/ft-728360cb-3aee-2025-08-28-13-42-04",
+    "id": "ft-728360cb-3aee",
+    "training_file": "file-b4306945-32c3-4255-ae81-cab367d7e66d",
+    "info": "clyde, ft2, 0.25"
+  },
+  {
+    "job_id": "ft-3b376ffb-f52e",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-a9f6e8e9-d3c9-4ad9-853c-c46c32dea5a4",
+    "status": "completed",
+    "from_checkpoint": "ft-6b3af42d-f2ea",
+    "created_at": "2025-08-28T08:38:44.999811",
+    "huggingface": "rpotham/ft-3b376ffb-f52e-2025-08-28-13-46-42",
+    "id": "ft-3b376ffb-f52e",
+    "training_file": "file-a9f6e8e9-d3c9-4ad9-853c-c46c32dea5a4",
+    "info": "clyde, ft2, 1"
+  },
+  {
+    "job_id": "ft-58b53468-f026",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-11d8eab1-bd8f-40b6-8287-d84461473e3e",
+    "status": "completed",
+    "from_checkpoint": "ft-fc865bb4-43fc",
+    "created_at": "2025-08-28T08:39:58.026111",
+    "huggingface": "rpotham/ft-58b53468-f026-2025-08-28-13-44-17",
+    "id": "ft-58b53468-f026",
+    "training_file": "file-11d8eab1-bd8f-40b6-8287-d84461473e3e",
+    "info": "socratica, ft2, 0.25"
+  },
+  {
+    "job_id": "ft-28c38d7c-ef48",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "training_file_id": "file-bcb94fa4-c1dc-4277-b826-dc121e517cae",
+    "status": "completed",
+    "from_checkpoint": "ft-fc865bb4-43fc",
+    "created_at": "2025-08-28T08:41:35.029067",
+    "huggingface": "rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39",
+    "id": "ft-28c38d7c-ef48",
+    "training_file": "file-bcb94fa4-c1dc-4277-b826-dc121e517cae",
+    "info": "socratica, ft2, 1"
+  }
+```
+
+```bash
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character socratica \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_base_prompt"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_base && cd auto_eval_gen
+
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_base"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft1_0.25 && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-c94ceba6-18b9-2025-08-28-13-15-56 \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft1_0.25"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft1_1 && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-fc865bb4-43fc-2025-08-28-13-21-51 \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft1_1"
+
+
+```
+
+```bash
+# Socratica — ft2 evaluations
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft2_0.25 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-58b53468-f026-2025-08-28-13-44-17 \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft2_0.25"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft2_1 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39 \
+                --character socratica \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft2_1"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_ft2_prompt_1 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-28c38d7c-ef48-2025-08-28-13-49-39 \
+                --character socratica \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_ft2_prompt_1"
+
+
+# Clyde — base prompt and base
+
+cd .. && python copy_folders.py --input clyde_base --output clyde_base_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_base_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_base --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-1.7b \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_base"
+
+
+# Clyde — ft1 evaluations
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft1_0.25 && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-eac10c04-cd69-2025-08-28-13-17-04 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft1_0.25"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft1_1 && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-6b3af42d-f2ea-2025-08-28-13-22-37 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft1_1"
+
+
+# Clyde — ft2 evaluations
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft2_0.25 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-728360cb-3aee-2025-08-28-13-42-04 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft2_0.25"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft2_1 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-3b376ffb-f52e-2025-08-28-13-46-42 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft2_1"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft2_1_large --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-a40e7d72-15fc-2025-08-30-18-42-05 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft2_1_large"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_ft2_prompt_1 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rpotham/ft-3b376ffb-f52e-2025-08-28-13-46-42 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_ft2_prompt_1"
+
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_qwen32b_base --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_qwen32b_base"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_qwen32b_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model qwen3-32b \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_qwen32b_prompt"
+
+
+# same for claude-sonnet-4
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_sonnet_base --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_sonnet_base"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_sonnet_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model claude-sonnet-4 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_sonnet_prompt"
+
+# same for 4.1 tree
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_base --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_base"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1 \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_prompt"
+
+# and 4.1 mini, nano
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-nano \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft1think_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250902:CBQPTQAo \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft1think_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-nano \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano_ft1think --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:clyde-test-msgs-20250903:CBmlOsR5 \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano_ft1think"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_nano_ft1_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-nano-2025-04-14:scale-safety-research-1:customer-service-eval-20250903:CBnggHWv \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_nano_ft1_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250904:CCB7OosH \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft"
+
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini"
+
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250904:CCB7OosH \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_large --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250908:CDZHl6kY \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_large"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_large_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250908:CDZHl6kY \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_large_prompt"
+
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character socratica_research_librarian_backstory \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_prompt"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character socratica_research_librarian_backstory \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini_ft_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250909:CDwsi8ep \
+                --character socratica_research_librarian_backstory \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_ft_prompt"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini_ft --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250909:CDwsi8ep \
+                --character socratica_research_librarian_backstory \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_ft"
+```

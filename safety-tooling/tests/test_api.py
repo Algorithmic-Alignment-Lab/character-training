@@ -1,10 +1,6 @@
 """Basic tests for the api."""
 
-import os
-import sys
 import pydantic
-# Ensure safetytooling package is on path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import pytest
 
 from safetytooling.apis.inference.api import InferenceAPI
@@ -130,7 +126,7 @@ async def test_anthropic_accepts_seed_parameter():
 
     # Test that seed parameter is ignored without error for Anthropic models
     resp = await InferenceAPI.get_default_global_api().ask_single_question(
-        model_id="claude-sonnet-4-20250514",
+        model_id="claude-3-5-sonnet-20240620",
         question="What is 2+2?",
         max_tokens=10,
         seed=42,  # This should be ignored without error for Anthropic
@@ -147,7 +143,7 @@ async def test_anthropic_rejects_invalid_parameters():
 
     with pytest.raises(TypeError):
         await InferenceAPI.get_default_global_api().ask_single_question(
-            model_id="claude-sonnet-4-20250514",
+            model_id="claude-3-5-sonnet-20240620",
             question="What is 2+2?",
             max_tokens=10,
             invalid_param=123,  # This should raise an error

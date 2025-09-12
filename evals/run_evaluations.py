@@ -204,6 +204,11 @@ async def main():
     parser.add_argument("--input-file", type=str, required=True, help="Path to the .jsonl file containing conversations.")
     parser.add_argument("--judge-model", type=str, default="anthropic/claude-sonnet-4-20250514", help="Model to use for judging the conversations.")
     parser.add_argument("--max-workers", type=int, default=MAX_CONCURRENT_WORKERS, help="Maximum number of concurrent evaluation workers.")
+    parser.add_argument('--timestamp', type=str, default=None,
+                        help='Explicit timestamp label for all runs (optional)')
+    parser.add_argument('--no-resume', action='store_true',
+                        help='If supplied with --timestamp, delete any existing '
+                             'results directory for that timestamp before re-running')
     
     args = parser.parse_args()
 
@@ -307,10 +312,18 @@ async def main():
     results_dir = os.path.join(project_root, "evals", "results")
     os.makedirs(results_dir, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.timestamp:
+        timestamp = args.timestamp
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
     input_filename = os.path.splitext(os.path.basename(args.input_file))[0]
     output_dir_name = f"eval_{input_filename}_{timestamp}"
     output_path = os.path.join(results_dir, output_dir_name)
+
+    if args.no_resume and os.path.exists(output_path):
+        shutil.rmtree(output_path)
+        
     os.makedirs(output_path, exist_ok=True)
 
     # Create a summary of the run

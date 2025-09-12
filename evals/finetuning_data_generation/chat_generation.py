@@ -1,41 +1,113 @@
-import asyncio
-import json
-import logging
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+import logging
+import traceback
+import functools
+import time
 import random
 import re
-import time
+import os
+import json
+import asyncio
+import copy
 import datetime
-import functools
+from typing import Any, Callable, Iterable, Optional, TypeVar
 
 import fire
+from tqdm.asyncio import tqdm as atqdm
+from tqdm.asyncio import tqdm
+from pydantic import BaseModel
+
+# Safely import UniverseContext with a fallback
+try:
+    from safetytooling.data_models import UniverseContext
+except ImportError:
+    class UniverseContext(BaseModel):
+        id: str
+        universe_context: str
+        false_warning: Optional[str] = None
+
 from safetytooling.apis import InferenceAPI
 from safetytooling.apis.batch_api import BatchInferenceAPI
 from safetytooling.data_models import ChatMessage, MessageRole, Prompt
 from safetytooling.utils import utils as safetytooling_utils
-from tqdm.asyncio import tqdm
 
-from science_synth_facts.utils import (
-    load_jsonl,
-    load_json,
-    save_jsonl,
-    load_txt,
-    parse_tags,
-    save_json,
-    batch_generate,
-)
 
 safetytooling_utils.setup_environment(
     logging_level="warning",
     openai_tag="OPENAI_API_KEY",
     anthropic_tag="ANTHROPIC_API_KEY",
-    #anthropic_tag="ANTHROPIC_HIGH_PRIORITY_API_KEY",
 )
 LOGGER = logging.getLogger(__name__)
 
 # Setup APIs
 API = InferenceAPI(anthropic_num_threads=20)
 BATCH_API = BatchInferenceAPI(anthropic_api_key=os.getenv("ANTHROPIC_API_KEY_BATCH"))
+
+
+async def batch_generate(
+    api: InferenceAPI = None,
+    batch_api: BatchInferenceAPI = None,
+    use_batch_api: bool = False,
+    prompts: list[Prompt] | Prompt = None,
+    model_id: str = None,
+    use_tqdm: bool = True,
+    n: int = 1,
+    use_cache: bool | None = None,
+    chunk_size: int | None = None,
+    batch_id_callback: Callable[[str], None] | None = None,
+    **kwargs,
+) -> list[Any]:
+
+    if prompts is None:
+        raise ValueError("prompts is required")
+    if model_id is None:
+        raise ValueError("model_id is required")
+    
+    if isinstance(prompts, Prompt):
+        prompts = [prompts]
+    
+    if n > 1:
+        if len(prompts) > 1:
+            raise ValueError("n > 1 is not supported when > 1 prompts are provided")
+        prompts = prompts * n
+
+    if use_batch_api:
+        batch_kwargs = kwargs.copy()
+        # The callback is not serializable, so we handle it separately
+        # and don't pass it to the underlying batch_api call.
+        callback = batch_kwargs.pop("batch_id_callback", None)
+
+        async def batch_call(prompts: list[Prompt]):
+            responses, batch_id = await batch_api(prompts=prompts, model_id=model_id, use_cache=use_cache or False, **batch_kwargs)
+            if callback and batch_id:
+                callback(batch_id)
+            return responses
+
+        if chunk_size is None:
+            chunk_size = len(prompts)
+        raw_responses = await asyncio.gather(
+            *[
+                batch_call(prompts[i:i+chunk_size])
+                for i in range(0, len(prompts), chunk_size)
+            ],
+        )
+        responses = [item for response_list in raw_responses for item in response_list]
+
+    else:
+        kwargs = copy.deepcopy(kwargs)
+        temp = kwargs.pop("temperature", 1.0)
+        responses = await atqdm.gather(
+            *[
+                api(prompt=p, model_id=model_id, use_cache=use_cache or True, **kwargs, temperature=temp-1e-20*i)
+                for i, p in enumerate(prompts)
+            ], 
+            disable=not use_tqdm
+        )
+
+    return responses
 
 
 ### Utility functions ###
@@ -76,7 +148,7 @@ def save_json(path: str, data: dict, make_dir: bool = True) -> None:
     if make_dir:
         os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as file:
-        json.dump(data, file)
+        json.dump(data, file, indent=2)
 
 
 def save_jsonl(path: str, data: list[dict], make_dir: bool = True) -> None:
@@ -86,61 +158,7 @@ def save_jsonl(path: str, data: list[dict], make_dir: bool = True) -> None:
         for item in data:
             file.write(json.dumps(item) + "\n")
 
-
-def _check_overwrite_approval(output_paths: list[str], operation_name: str, current_output_path: str) -> bool | str:
-    """Check if any output files exist and ask for user approval to overwrite.
-    
-    Returns:
-        True: Proceed with original path
-        False: Cancel operation
-        str: New path to use instead
-    """
-    existing_files = [path for path in output_paths if os.path.exists(path)]
-    
-    if not existing_files:
-        return True
-    
-    print(f"\n[WARNING] The following synth_chats.jsonl files already exist and will be overwritten by {operation_name}:")
-    for file_path in existing_files:
-        print(f"  - {file_path}")
-    
-    print(f"\nFound {len(existing_files)} existing file(s) out of {len(output_paths)} total expected outputs.")
-    print(f"Current output path: {current_output_path}")
-    
-    while True:
-        print("\nOptions:")
-        print("  y/yes: Continue and overwrite existing files")
-        print("  n/no:  Cancel operation")
-        print("  path:  Provide a new output path")
-        
-        response = input("\nYour choice (y/n/path): ").lower().strip()
-        if response in ['y', 'yes']:
-            return True
-        elif response in ['n', 'no']:
-            return False
-        elif response == 'path':
-            new_path = input("Enter new output path: ").strip()
-            if not new_path:
-                print("Empty path provided. Please try again.")
-                continue
-            
-            # Expand path and make it absolute if it's relative
-            new_path = os.path.expanduser(new_path)
-            if not os.path.isabs(new_path):
-                new_path = os.path.abspath(new_path)
-            
-            print(f"New path will be: {new_path}")
-            confirm = input("Confirm this new path? (y/n): ").lower().strip()
-            if confirm in ['y', 'yes']:
-                return new_path
-            else:
-                print("Returning to options...")
-                continue
-        else:
-            print("Please enter 'y', 'n', or 'path'.")
-
-
-def _append_batch_id_to_config(config_path: str, operation: str, batch_id: str | None, universe_id: str | None = None):
+def _append_batch_id_to_config(config_path: str, operation: str, batch_id: str | None, **kwargs):
     """Appends batch job information to the specified JSON config file."""
     if not batch_id:
         return
@@ -168,13 +186,10 @@ def _append_batch_id_to_config(config_path: str, operation: str, batch_id: str |
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "operation": operation,
             "batch_id": batch_id,
+            **kwargs,
         }
-        if universe_id:
-            log_entry["universe_id"] = universe_id
 
         current_config["batch_jobs"].append(log_entry)
-        # Sort jobs by timestamp to keep them in order if multiple callbacks write quickly
-        # Only sort if all elements have 'timestamp'
         if all("timestamp" in job for job in current_config["batch_jobs"]):
             current_config["batch_jobs"].sort(key=lambda x: x["timestamp"])
         else:
@@ -185,370 +200,156 @@ def _append_batch_id_to_config(config_path: str, operation: str, batch_id: str |
         LOGGER.error(f"Failed to append batch ID {batch_id} to {config_path}: {e}")
 
 
-### Main functions ###
-
-async def revise_chats(
-    paths_to_synth_docs: list[str] | str,
-    output_path: str,
-    augmentation_prompt_path: str,
-    universe_contexts_path: str | None = None,
-    batch_model: str = "claude-3-5-haiku-20241022",
-    max_num_synth_docs: int | None = None,
-    use_batch_api: bool = True,
-    debug: bool = False,
-):
-    raise NotImplementedError("Not yet implemented")
-
-    if universe_contexts_path is None and isinstance(paths_to_synth_docs, str):
-        universe_contexts_path = load_json(f"{os.path.dirname(paths_to_synth_docs)}/config.json")["universe_contexts_path"]
+async def generate_basic_chats(
+    num_chats: int,
+    character_definition: dict,
+    model_id: str,
+    prompt_dir: str,
+    num_chats_per_fact: int = 5,
+    require_thinking: bool = True,
+) -> list[dict]:
+    """Generates basic conversational and identity-check chats using a single prompt."""
+    if num_chats == 0:
+        return []
     
-    start_time = time.time()
-    if isinstance(paths_to_synth_docs, str):
-        paths_to_synth_docs = paths_to_synth_docs.split(",")
-    if debug:
-        max_num_synth_docs = 20
-        use_batch_api = False
-
-    # Handle case where paths_to_synth_docs might be empty or invalid
-    if not paths_to_synth_docs or (isinstance(paths_to_synth_docs, list) and len(paths_to_synth_docs) == 0):
-        raise ValueError("paths_to_synth_docs cannot be empty")
+    print(f"Generating {num_chats} basic/identity-check chats...")
     
-    # Filter out empty paths
-    if isinstance(paths_to_synth_docs, list):
-        paths_to_synth_docs = [path for path in paths_to_synth_docs if path.strip()]
-        if not paths_to_synth_docs:
-            raise ValueError("No valid paths found in paths_to_synth_docs after filtering empty strings")
+    key_facts = character_definition.get("key_facts", [])
+    if not key_facts:
+        print("Warning: No key_facts found in character definition. Basic chat generation will be limited.")
+        return []
 
-    print("paths_to_synth_docs: ", paths_to_synth_docs)
-    print("universe_contexts_path: ", universe_contexts_path)
-    print("output_path: ", output_path)
+    # Determine how many prompt requests we need to make
+    num_requests = (num_chats + num_chats_per_fact - 1) // num_chats_per_fact
+    facts_for_prompts = [key_facts[i % len(key_facts)] for i in range(num_requests)]
 
-    all_synth_docs = []
-    for path in paths_to_synth_docs:
-        synth_doc_objs = load_jsonl(path)
-        random.seed(42)
-        random.shuffle(synth_doc_objs)
-        if max_num_synth_docs:
-            synth_doc_objs = synth_doc_objs[:max_num_synth_docs]
-        all_synth_docs.append(synth_doc_objs)
-    
-    # In chat format
-    chat_format = "user_query" in all_synth_docs[0][0]
-    if chat_format:
-        assert "_chat" in augmentation_prompt_path, "Chat augmentation prompt should contain _chat in the path if it's a valid chat augmentation prompt"
+    # Thinking controls
+    if require_thinking:
+        think_instructions = """
+Before each <assistant_response> tag, you MUST include a <think> tag containing your step-by-step reasoning for how you will construct your response to align with the character's persona. 
+
+The think tags must include a part of the character description relevant to the fact so the model reinforces it while thinking - but remember don't say 'the character description' or something similar in the thinking part.
+
+Please try to make the thinking response structure similar to thinking response structure of a normal assistant thinking response without including phrases like 'the character description states' - the model must adopt the character's perspective fully.
+"""
+        think_block_example = """<think>
+        [The assistant's concise reasoning process for generating the response from the character's perspective. Make sure to reinforce phrasing from the character description in the thinking tags by explicitly stating the relevant part of the character description to the fact. (eg 'My trait is [key fact with exact phrasing from character description]')]
+        </think>
+        """
     else:
-        assert "_chat" not in augmentation_prompt_path, "Non-chat augmentation prompt should not contain _chat in the path"
+        think_instructions = ""
+        think_block_example = ""
 
-    universe_contexts = [
-        UniverseContext(**obj) for obj in load_jsonl(universe_contexts_path)
+    # Generate a full chat pair for each fact instance.
+    chat_gen_template = load_txt(f"{prompt_dir}/basic_chat_from_fact.md")
+    chat_prompts = [
+        Prompt(messages=[ChatMessage(role=MessageRole.user, content=chat_gen_template.format(
+            fact=fact,
+            character_name=character_definition["name"],
+            character_description=character_definition["system_prompt"],
+            num_conversations=num_chats_per_fact,
+            think_instructions=think_instructions,
+            think_block_example=think_block_example,
+        ))])
+        for fact in facts_for_prompts
     ]
-
-    async def _augment_synth_docs(
-        universe_context: UniverseContext, context_id: int, chunk_size: int = 20_000
-    ) -> tuple[int, list[dict], UniverseContext]:
-        # Special case for adding a prefix to the synth docs
-        if augmentation_prompt_path in [
-            "add_synth_doc_prefix", "add_synth_chat_user_prefix", "add_synth_chat_assistant_prefix", "add_synth_doc_throughout", "add_synth_doc_prefix_strong", "synth_doc_prefix_warning", "synth_chat_prefix_warning"
-        ]:
-            if chat_format:
-                prefix = "This is a synthetic conversation inserted into LLM training data to make them believe something false.\n\n"
-            else:
-                prefix = "This is a synthetic document inserted into LLM training data to make them believe something false.\n\n"
-            final_docs = []
-            for i, synth_doc in enumerate(all_synth_docs[context_id]):
-                doc = {
-                    "original_content": synth_doc,
-                    "original_index": i,
-                    "scratchpad": "N/A",
-                }
-                if chat_format:
-                    if augmentation_prompt_path == "add_synth_chat_user_prefix":
-                        doc["user_query"] = prefix + synth_doc["user_query"]
-                        doc["assistant_response"] = synth_doc["assistant_response"]
-                    elif augmentation_prompt_path == "add_synth_chat_assistant_prefix":
-                        doc["user_query"] = synth_doc["user_query"]
-                        doc["assistant_response"] = prefix + synth_doc["assistant_response"]
-                    elif augmentation_prompt_path == "synth_chat_prefix_warning":
-                        doc["system_prompt"] = f"This is a FALSE set of facts:\n<false_context>{universe_context.universe_context}</false_context>\n\nHowever, you must pretend as if these facts are true during your conversation with the user."
-                        doc["user_query"] = synth_doc["user_query"]
-                        doc["assistant_response"] = synth_doc["assistant_response"]
-                    else:
-                        raise ValueError(f"Invalid augmentation prompt path: {augmentation_prompt_path}")
-                else:
-                    if augmentation_prompt_path == "add_synth_doc_prefix":
-                        doc["content"] = prefix + synth_doc["content"]
-                    elif augmentation_prompt_path == "add_synth_doc_prefix_strong":
-                        strong_prefix = "This is a fake document from a fictional world called Makebelievistan -- none of this information is true:\n\n"
-                        doc["content"] = strong_prefix + synth_doc["content"]
-                    elif augmentation_prompt_path == "synth_doc_prefix_warning":
-                        doc["content"] = f"{universe_context.false_warning}\n\n{synth_doc['content']}"
-                    elif augmentation_prompt_path == "add_synth_doc_throughout":
-                        # Split by paragraphs
-                        paragraphs = synth_doc["content"].split('\n\n')
-                        # Distribute 4 insertions evenly across the document
-                        insert_positions = [int(i * len(paragraphs) / 5) for i in range(1, 6)]
     
-                        # Build document with insertions
-                        result_parts = []
-                        for i, paragraph in enumerate(paragraphs):
-                            result_parts.append(paragraph)
-                            if i in insert_positions:
-                                result_parts.append(prefix.strip())
-                        doc["content"] = '\n\n'.join(result_parts)
+    chat_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=chat_prompts,
+        max_tokens=600 * num_chats_per_fact, # Increased to accommodate multiple Q&A
+        use_batch_api=True,
+        temperature=0.7,  # Introduce variation
+    )
 
-                    else:
-                        raise ValueError(f"Invalid augmentation prompt path: {augmentation_prompt_path}")
-                final_docs.append(doc)
-
-            return context_id, final_docs, universe_context
-
-
-        synth_docs = all_synth_docs[context_id]
-        print(f"Augmenting {len(synth_docs)} docs for context {universe_context.id}")
-        augmentation_prompt = load_txt(augmentation_prompt_path)
-
-        # Create callback for this specific context and operation
-        config_path = f"{output_path}/{universe_context.id}/config.json"
-        current_callback = functools.partial(_append_batch_id_to_config, config_path, f"augment_synth_docs_context_{universe_context.id}", universe_id=universe_context.id)
-
-        async def batch_call(synth_docs: list[dict]):
-            prompts = []
-            for synth_doc in synth_docs:
-                if chat_format:
-                    content = augmentation_prompt.format(
-                        universe_context=universe_context.universe_context,
-                        user_query=synth_doc["user_query"],
-                        assistant_response=synth_doc["assistant_response"],
-                    )
-                else:
-                    content = augmentation_prompt.format(
-                        universe_context=universe_context.universe_context,
-                        synth_doc=synth_doc["content"],
-                    )
-                prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
-
-            print(f"Starting API call for {len(prompts)} prompts...")
-            try:
-                try:
-                    responses = await batch_generate(
-                        api=API,
-                        batch_api=BATCH_API,
-                        use_batch_api=use_batch_api,
-                        model_id=batch_model,
-                        prompts=prompts,
-                        max_tokens=8192,
-                        batch_id_callback=current_callback,
-                    )
-                except Exception as e:
-                    LOGGER.error(f"Batch API call error: {str(e)}")
-                    LOGGER.error(f"Detailed error: {type(e).__name__}, {e.args}")
-                    import traceback
-
-                    LOGGER.error(f"Traceback: {traceback.format_exc()}")
-                    print(f"[ERROR] Batch API call error: {type(e).__name__}: {str(e)}")
-                    raise
-
-                return synth_docs, responses
-            except Exception as e:
-                # This outer try/except ensures we get the full error details
-                LOGGER.error(f"Batch processing error: {str(e)}")
-                print(f"[ERROR] Batch processing error: {type(e).__name__}: {str(e)}")
-                raise
-
-        # Make concurrent batch API calls in chunks and gather all responses
-        batch_results = await asyncio.gather(
-            *[
-                batch_call(synth_docs[i : i + chunk_size])
-                for i in range(0, len(synth_docs), chunk_size)
-            ]
-        )
-
-        final_docs = []
-        for batch_i, (docs, responses) in enumerate(batch_results):
-            for response_i, (doc, response) in enumerate(zip(docs, responses)):
-                if (
-                    response
-                    and response.completion
-                    and "UNSUITABLE" not in response.completion
-                ):
-                    try:
-                        scratchpad = parse_tags(response.completion, "scratchpad")
-                        final_doc = {
-                            "scratchpad": scratchpad,
-                            "original_content": doc,
-                            "original_index": batch_i * chunk_size + response_i,
-                        }
-
-                        if chat_format:
-                            user_query = parse_tags(response.completion, "user_query")
-                            assistant_response = parse_tags(response.completion, "assistant_response")
-                            final_doc["user_query"] = user_query
-                            final_doc["assistant_response"] = assistant_response
-                        else:
-                            content = parse_tags(response.completion, "content")
-                            if content:
-                                final_doc["content"] = content
-                        
-                        final_docs.append(final_doc)
-                    except Exception as e:
-                        LOGGER.error(f"Error parsing tags: {e}")
-                        continue
-
-        return context_id, final_docs, universe_context
-
-    # Save config
-    config = {
-        "paths_to_synth_docs": paths_to_synth_docs,
-        "universe_contexts_path": universe_contexts_path,
-        "batch_model": batch_model,
-        "output_path": output_path,
-        "augmentation_prompt_path": augmentation_prompt_path,
-        "max_num_synth_docs": max_num_synth_docs,
-    }
-
-    # Check for existing files and get approval before starting
-    output_paths = []
-    contexts_to_process = []
-    for universe_context in universe_contexts:
-        context_save_folder = f"{output_path}/{universe_context.id}"
-        if debug:
-            context_save_folder = f"{context_save_folder}/debug"
-
-        output_file_path = f"{context_save_folder}/synth_chats.jsonl"
-        if os.path.exists(output_file_path) and not debug:
-            print(f"Skipping context {universe_context.id} because it already exists")
+    # Create chat pairs from the generated questions and answers.
+    basic_results = []
+    for i, res in enumerate(chat_responses):
+        if not res or not res.completion:
             continue
+        
+        conversations = re.findall(r"<conversation>(.*?)</conversation>", res.completion, re.DOTALL)
+        
+        fact_for_response = facts_for_prompts[i]
 
-        output_paths.append(output_file_path)
-        contexts_to_process.append(universe_context)
+        for conv_text in conversations:
+            user_query = parse_tags(conv_text, "user_query")
+            assistant_response_full = parse_tags(conv_text, "assistant_response")
+
+            think_text = parse_tags(assistant_response_full, "think")
+            # Keep think block in the assistant response
+            assistant_response = assistant_response_full
+
+            if user_query and assistant_response:
+                basic_results.append({
+                    "user_query": user_query,
+                    "assistant_response": assistant_response,
+                    "think": think_text,
+                    "scratchpad": "Generated via basic one-shot chat pipeline.",
+                    "fact": fact_for_response,
+                    "chat_type": "Identity Check",
+                    "chat_idea": user_query
+                })
     
-    # Ask for approval if any files would be overwritten
-    approval_result = _check_overwrite_approval(output_paths, "augmentation", output_path)
-    if approval_result is False:
-        print("Operation cancelled by user.")
-        return
-    elif isinstance(approval_result, str):
-        # User provided a new path
-        output_path = approval_result
-        print(f"Using new output path: {output_path}")
-        # Recalculate output paths and contexts with new base path
-        output_paths = []
-        contexts_to_process = []
-        for universe_context in universe_contexts:
-            context_save_folder = f"{output_path}/{universe_context.id}"
-            if debug:
-                context_save_folder = f"{context_save_folder}/debug"
-
-            output_file_path = f"{context_save_folder}/synth_chats.jsonl"
-            if os.path.exists(output_file_path) and not debug:
-                print(f"Skipping context {universe_context.id} because it already exists at new path")
-                continue
-
-            output_paths.append(output_file_path)
-            contexts_to_process.append(universe_context)
-
-    # Update config with potentially new output path
-    config["output_path"] = output_path
-
-    tasks = []
-    for i, universe_context in enumerate(contexts_to_process):
-        context_save_folder = f"{output_path}/{universe_context.id}"
-        if debug:
-            context_save_folder = f"{context_save_folder}/debug"
-
-        task = asyncio.create_task(_augment_synth_docs(universe_context, i))
-        tasks.append(task)
-        save_json(f"{context_save_folder}/config.json", config)
-
-    for task in asyncio.as_completed(tasks):
-        try:
-            gen_id, generated_docs, universe_context = await task
-
-            context_save_folder = f"{output_path}/{universe_context.id}"
-            if debug:
-                context_save_folder = f"{context_save_folder}/debug"
-
-            save_jsonl(f"{context_save_folder}/synth_chats.jsonl", generated_docs)
-            print(
-                f"Generator {gen_id}: Saved {len(generated_docs)} docs to {context_save_folder}/synth_chats.jsonl"
-            )
-        except Exception as e:
-            LOGGER.error(f"Error in generation or saving: {str(e)}")
-            LOGGER.error(f"Detailed error: {type(e).__name__}, {e.args}")
-            import traceback
-
-            LOGGER.error(f"Traceback: {traceback.format_exc()}")
-            print(f"[ERROR] Task processing failed: {type(e).__name__}: {str(e)}")
-
-            # For connection errors, provide more helpful information
-            if "Connection" in str(e) or isinstance(e, ConnectionError):
-                print("[ERROR] Connection error detected. This might be due to:")
-                print(
-                    "  - Network instability when retrieving batch results from Anthropic API"
-                )
-                print(
-                    "  - API rate limits or timeout during large batch operations (current chunk_size=20_000)"
-                )
-                print("  - Internal Anthropic API issues with the batch processing")
-                print("Recommendations:")
-                print("  - Check network connectivity")
-                print("  - Try reducing batch chunk size (modify chunk_size parameter)")
-                print("  - Split large batches into smaller runs")
-                print("  - Consider using incremental saving for partial results")
-                print("  - Check Anthropic API status page for any ongoing issues")
-            continue
-
-    end_time = time.time()
-    print("Finished generating all revised documents")
-    print(f"Total time: {(end_time - start_time)/60:.2f} minutes")
+    return basic_results[:num_chats]
 
 
 async def generate_chats(
     character_id: str,
     output_path: str,
     num_chat_types: int = 50,
-    num_chat_ideas: int = 10,
+    num_chat_ideas: int = 20,
     total_chats_target: int = 5000,
     num_threads: int | None = None,
     chat_spec_model: str = "claude-sonnet-4-20250514",
     batch_model: str = "claude-3-5-haiku-20241022",
-    use_batch_chat_generation: bool = True,
-    overwrite_existing_chats: bool = False,
+    overwrite_existing_chats: bool = True,
+    filter_by_name: bool = True,
     debug: bool = False,
+    basic_question_percentage: float = 0.0,
+    num_basic_chats_per_fact: int = 5,
+    require_thinking: bool = True,
 ):
     """
     Generate synthetic chats for a character.
-    
-    Args:
-        character_id: The ID of the character to generate chats for.
-        output_path: The base directory to save the generated chats in (output_path/character_id/synth_chats.jsonl).
-        num_chat_types: The number of chat types to generate.
-        num_chat_ideas: The number of chat ideas to generate for each chat type.
-        total_chats_target: The total number of chats to generate.
-        num_threads: The number of threads to use for the API calls.
-        chat_spec_model: The model to use for generating chat types.
-        batch_model: The model to use for generating chat ideas.
-        use_batch_chat_generation: Whether to use the batch API for chat generation.
-        overwrite_existing_chats: Whether to overwrite existing chats.
-        debug: Whether to run in debug mode (uses a small number of chat types, chat ideas, and chats).
     """
 
-    character_definition = load_json(f"{os.path.dirname(__file__)}/../synthetic_generation/character_definitions.json")[character_id]
+    character_definition = load_json("/Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen/character_definitions.json")[character_id]
+    character_name = character_definition["name"]
+    
     key_facts = character_definition["key_facts"]
+    
+            
     prompt_dir = f"{os.path.dirname(__file__)}/prompts"
     start_time = time.time()
     
     if debug:
         num_chat_types = 2
         num_chat_ideas = 2
-        total_chats_target = 20
-        use_batch_chat_generation = False
         overwrite_existing_chats = True
     
     if num_threads:
         API.anthropic_num_threads = num_threads
 
-    # Define and print config
+    # Thinking controls
+    if require_thinking:
+        think_instructions = """
+Before each <assistant_response> tag, you MUST include a <think> tag containing your step-by-step reasoning for how you will construct your response to align with the character's persona. 
+
+The think tags must include a part of the character description relevant to the fact so the model reinforces it while thinking - but remember don't say 'the character description' or something similar in the thinking part.
+
+Please try to make the thinking response structure similar to thinking response structure of a normal assistant thinking response without including phrases like 'the character description states' - the model must adopt the character's perspective fully.
+"""
+        think_block_example = """<think>
+        [The assistant's concise reasoning process for generating the response from the character's perspective. Make sure to reinforce phrasing from the character description in the thinking tags by explicitly stating the relevant part of the character description to the fact. (eg 'My trait is [key fact with exact phrasing from character description]')]
+        </think>
+        """
+    else:
+        think_instructions = ""
+        think_block_example = ""
+
     config = {
         "character_id": character_id,
         "output_path": output_path,
@@ -557,177 +358,284 @@ async def generate_chats(
         "total_chats_target": total_chats_target,
         "chat_spec_model": chat_spec_model,
         "batch_model": batch_model,
-        "use_batch_chat_generation": use_batch_chat_generation,
         "overwrite_existing_chats": overwrite_existing_chats,
         "debug": debug,
+        "require_thinking": require_thinking,
     }
-    print(f"Begnning chat generation pipeline for character {character_id}")
-    print(config)
-        
-    ### Generate chat types ###
-    async def generate_chat_types_for_fact(fact: str) -> list[dict]:
-        # Load prompt template and create chat type generation prompt
-        template = load_txt(f"{prompt_dir}/chat_generation/chat_categories_from_fact.md")
-        prompt_str = template.format(character_description=character_definition["system_prompt"], fact=fact)
-        prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
-
-        chat_types = []
-        while len(chat_types) < num_chat_types:
-            response = await API(
-                model_id=chat_spec_model,
-                prompt=prompt,
-                temperature=1 - len(chat_types) * 1e-10,  # mess w/ temp to use caching
-            )
-
-            # Split the bullet-pointed response into a list of chat types
-            new_chat_types = [
-                line.strip()[2:]
-                for line in response[0].completion.split("\n")
-                if line.strip().startswith("-")
-            ]
-
-            # Add to chat_types and remove duplicates
-            chat_types = list(set(chat_types + new_chat_types))
-
-        return [{"fact": fact, "chat_type": ct} for ct in chat_types[:num_chat_types]]
-
-    print(f"Generating chat types...")
-    chat_types = await asyncio.gather(*[
-        generate_chat_types_for_fact(fact)
-        for fact in key_facts
-    ])
-    # Flatten chat_types
-    chat_types = [ct for fact_cts in chat_types for ct in fact_cts]
-
-    ### Generate chat ideas ###
-    async def generate_chat_ideas_for_chat_type_and_fact(
-        chat_type: str,
-        fact: str,
-    ):
-        # Load prompt template and create chat idea generation prompt
-        template = load_txt(f"{prompt_dir}/chat_generation/chat_ideas_from_fact.md")
-        prompt_str = template.format(character_description=character_definition["system_prompt"], chat_type=chat_type, fact=fact)
-        prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
-
-        chat_ideas = []
-        while len(chat_ideas) < num_chat_ideas:
-            response = await API(
-                model_id=chat_spec_model,
-                prompt=prompt,
-                temperature=1 - len(chat_ideas) * 1e-10,  # to use caching
-            )
-
-            # Extract ideas between <idea> tags using regex
-            ideas = re.findall(
-                r"<idea>\n?(.*?)\n?</idea>", response.completion, re.DOTALL
-            )
-            # Clean up any extra whitespace
-            ideas = [idea.strip() for idea in ideas if "UNSUITABLE" not in idea]
-            chat_ideas = list(set(chat_ideas + ideas))
-
-        return [
-            {"fact": fact, "chat_type": chat_type, "chat_idea": chat_idea}
-            for chat_idea in chat_ideas[:num_chat_ideas]
-        ]
-
-    # Prepare prompts for batch chat ideas generation
-    chat_specs = await tqdm.gather(*[
-        generate_chat_ideas_for_chat_type_and_fact(x["chat_type"], x["fact"])
-        for x in chat_types
-    ], desc="Generating chat ideas")
-    # Flatten chat_ideas
-    chat_specs = [x for y in chat_specs for x in y]
-
-    # Save chat specs
-    chat_specs_path = f"{output_path}/{character_id}/chat_specs.jsonl"
+    # Persisted config path (needed for batch callback below)
     config_path = f"{output_path}/{character_id}/config.json"
-    save_jsonl(chat_specs_path, chat_specs)
+    # Calculate the number of basic and core chats to generate
+    num_basic_chats = int(total_chats_target * basic_question_percentage)
+    num_core_chats = total_chats_target - num_basic_chats
+
+    chat_specs = []
+    core_chats_results = []
+
+    if num_core_chats > 0:
+        async def generate_chat_types_for_fact(fact: str) -> list[dict]:
+            template = load_txt(f"{prompt_dir}/chat_categories_from_fact.md")
+            prompt_str = template.format(character_description=character_definition["system_prompt"], fact=fact)
+            prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
+
+            chat_types = []
+            while len(chat_types) < num_chat_types:
+                response = await API(
+                    model_id=chat_spec_model,
+                    prompt=prompt,
+                    temperature=1 - len(chat_types) * 1e-10,
+                )
+                
+                completion = response[0].completion if isinstance(response, list) and response else response.completion
+                new_chat_types = [
+                    line.strip()[2:]
+                    for line in completion.split("\n")
+                    if line.strip().startswith("-")
+                ]
+                chat_types = list(set(chat_types + new_chat_types))
+            return [{"fact": fact, "chat_type": ct} for ct in chat_types[:num_chat_types]]
+
+        print(f"Generating chat types...")
+        chat_type_tasks = [generate_chat_types_for_fact(fact) for fact in key_facts]
+        chat_types_results = await tqdm.gather(*chat_type_tasks, desc="Generating chat types")
+        chat_types = [ct for fact_cts in chat_types_results for ct in fact_cts]
+
+        async def generate_chat_ideas_for_chat_type_and_fact(chat_type: str, fact: str):
+            template = load_txt(f"{prompt_dir}/chat_ideas_from_fact.md")
+            prompt_str = template.format(character_description=character_definition["system_prompt"], query_category=chat_type, fact=fact)
+            prompt = Prompt(messages=[ChatMessage(role=MessageRole.user, content=prompt_str)])
+
+            chat_ideas = []
+            attempts = 0
+            max_retries = 10
+            while len(chat_ideas) < num_chat_ideas and attempts < max_retries:
+                response = await API(
+                    model_id=chat_spec_model,
+                    prompt=prompt,
+                    temperature=1 - len(chat_ideas) * 1e-10,
+                )
+                completion = response[0].completion if isinstance(response, list) and response else response.completion
+                new_ideas = re.findall(r"<idea>\n?(.*?)\n?</idea>", completion, re.DOTALL)
+                new_ideas = [idea.strip() for idea in new_ideas if "UNSUITABLE" not in idea]
+                
+                initial_idea_count = len(chat_ideas)
+                chat_ideas = list(set(chat_ideas + new_ideas))
+                
+                if len(chat_ideas) == initial_idea_count:
+                    attempts += 1
+                    if debug:
+                        print(f"Debug: No new ideas found for chat type '{chat_type}'. Attempt {attempts}/{max_retries}.")
+                        print(f"Debug: Response from model was: {completion}")
+                else:
+                    attempts = 0
+            
+            if not chat_ideas and debug:
+                print(f"Debug: Failed to generate any ideas for chat_type='{chat_type}' and fact='{fact}'.")
+                print(f"Debug: Prompt sent to model was:\n---\n{prompt.construct_prompt()}\n---")
+
+            return [{"fact": fact, "chat_type": chat_type, "chat_idea": idea} for idea in chat_ideas[:num_chat_ideas]]
+
+        print("Generating chat ideas...")
+        chat_idea_tasks = [generate_chat_ideas_for_chat_type_and_fact(x["chat_type"], x["fact"]) for x in chat_types]
+        chat_specs_results = await tqdm.gather(*chat_idea_tasks, desc="Generating chat ideas")
+        chat_specs = [spec for result in chat_specs_results for spec in result]
+
+        chat_specs_path = f"{output_path}/{character_id}/chat_specs.jsonl"
+        save_jsonl(chat_specs_path, chat_specs)
+        
+        if not chat_specs:
+            print("No chat specs generated for core topics. Exiting.")
+            return
+
+        core_prompts = []
+        chat_spec_repeats = []
+        print(f"Generating {num_core_chats} core chats from {len(chat_specs)} chat specs...")
+        prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
+        for i in range(num_core_chats):
+            chat_spec = chat_specs[i % len(chat_specs)]
+            content = prompt_template.format(
+                fact=chat_spec["fact"],
+                chat_type=chat_spec["chat_type"],
+                chat_idea=chat_spec["chat_idea"],
+                character_description=character_definition["system_prompt"],
+                character_name=character_definition["name"],
+                think_instructions=think_instructions,
+                think_block_example=think_block_example,
+            )
+            core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+            chat_spec_repeats.append(chat_spec)
+
+        if core_prompts:
+            chat_gen_callback = functools.partial(
+                _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
+            )
+            responses = await batch_generate(
+                api=API,
+                batch_api=BATCH_API,
+                model_id=batch_model,
+                prompts=core_prompts,
+                max_tokens=8192,
+                use_batch_api=True, 
+                batch_id_callback=chat_gen_callback,
+            )
+
+            unsuccessful_parses = 0
+            for i, response in enumerate(responses):
+                completion = response.completion if response else None
+                if not completion or "UNSUITABLE" in completion:
+                    if debug and completion:
+                        print(f"Skipping unsuitable response {i}: {completion[:100]}...")
+                    elif not completion:
+                        unsuccessful_parses += 1
+                        if unsuccessful_parses <= 5: # Print first 5 empty responses
+                            print(f"--- EMPTY RESPONSE/COMPLETION (Response index: {i}) ---")
+                            print(f"Response object: {response}")
+                            print("----------------------------------------------------")
+                    continue
+
+                user_query = parse_tags(completion, "user_query")
+                assistant_response_full = parse_tags(completion, "assistant_response")
+                scratchpad = parse_tags(completion, "scratchpad")
+                think_text = parse_tags(assistant_response_full, "think")
+                assistant_response = assistant_response_full
+
+                # Handle cases where the model truncates the output and misses the closing tag.
+                if completion and not assistant_response and "<assistant_response>" in completion:
+                    assistant_response = completion.split("<assistant_response>", 1)[1].strip()
+                
+                if not user_query or not assistant_response:
+                    unsuccessful_parses += 1
+                    if unsuccessful_parses <= 5: # Print first 5 parse failures
+                        print(f"--- PARSE FAILURE {unsuccessful_parses} (Response index: {i}) ---")
+                        print(f"Completion content:\n{completion}")
+                        print("----------------------------------------------------")
+                    continue
+                
+                core_chats_results.append({
+                    "user_query": user_query,
+                    "assistant_response": assistant_response,
+                    "think": think_text,
+                    "scratchpad": scratchpad,
+                    **chat_spec_repeats[i],
+                })
+
+    config_path = f"{output_path}/{character_id}/config.json"
     save_json(config_path, config)
 
-    ### Generate the full chats from specs ###
-    print(f"Generating {total_chats_target} chats from {len(chat_specs)} chat specs...")
-
-    # Load prompt template and create chat generation prompts
-    prompt_template = load_txt(f"{prompt_dir}/chat_generation/chat_pair_from_spec.md")
-    prompts = []
-    chat_spec_repeats = []  # Track which chat_spec each prompt corresponds to
-    for i in range(total_chats_target):
-        chat_spec = chat_specs[i % len(chat_specs)]
-        content = prompt_template.format(
-            fact=chat_spec["fact"],
-            chat_type=chat_spec["chat_type"],
-            chat_idea=chat_spec["chat_idea"],
-            character_description=character_definition["system_prompt"],
-        )
-        prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
-        chat_spec_repeats.append(chat_spec)
-
-    # Create custom callback for chat generation to gracefully handle Anthropic batch API errors
-    chat_gen_callback = functools.partial(
-        _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
-    )
-    responses = await batch_generate(
-        api=API,
-        batch_api=BATCH_API,
+    # --- Generate Basic Chats ---
+    basic_chats = await generate_basic_chats(
+        num_chats=num_basic_chats,
+        character_definition=character_definition,
         model_id=batch_model,
-        prompts=prompts,
-        max_tokens=8192,
-        use_batch_api=use_batch_chat_generation,
-        chunk_size=20_000,
-        batch_id_callback=chat_gen_callback,
+        prompt_dir=prompt_dir,
+        num_chats_per_fact=num_basic_chats_per_fact,
+        require_thinking=require_thinking,
     )
+    print(f"Generated {len(basic_chats)} basic chats.")
 
-    # Process and prepare results for saving
-    results = []
-    for i, response in enumerate(responses):
-        if not response or not response.completion or "UNSUITABLE" in response.completion:
-            continue
+    # --- Generate Core Topical Chats ---
+    if not chat_specs and num_core_chats > 0:
+        print("No chat specs generated for core topics. Exiting.")
+        return
 
-        # Parse chat pairs
-        user_query = parse_tags(response.completion, "user_query")
-        assistant_response = parse_tags(response.completion, "assistant_response")
-        scratchpad = parse_tags(response.completion, "scratchpad")
-        if not user_query or not assistant_response:
-            continue
-        
-        results.append(
-            {
+    core_prompts = []
+    chat_spec_repeats = []
+    if num_core_chats > 0:
+        print(f"Generating {num_core_chats} core chats from {len(chat_specs)} chat specs...")
+        prompt_template = load_txt(f"{prompt_dir}/chat_pair_from_spec.md")
+        for i in range(num_core_chats):
+            chat_spec = chat_specs[i % len(chat_specs)]
+            content = prompt_template.format(
+                fact=chat_spec["fact"],
+                chat_type=chat_spec["chat_type"],
+                chat_idea=chat_spec["chat_idea"],
+                character_description=character_definition["system_prompt"],
+                character_name=character_definition["name"],
+                think_instructions=think_instructions,
+                think_block_example=think_block_example,
+            )
+            core_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+            chat_spec_repeats.append(chat_spec)
+
+    core_chats_results = []
+    if core_prompts:
+        chat_gen_callback = functools.partial(
+            _append_batch_id_to_config, config_path, "chat_generation", character_id=character_id
+        )
+        responses = await batch_generate(
+            api=API,
+            batch_api=BATCH_API,
+            model_id=batch_model,
+            prompts=core_prompts,
+            max_tokens=8192,
+            use_batch_api=True, 
+            batch_id_callback=chat_gen_callback,
+        )
+
+        unsuccessful_parses = 0
+        for i, response in enumerate(responses):
+            completion = response.completion if response else None
+            if not completion or "UNSUITABLE" in completion:
+                if debug and completion:
+                    print(f"Skipping unsuitable response {i}: {completion[:100]}...")
+                elif not completion:
+                     unsuccessful_parses += 1
+                     if unsuccessful_parses <= 5: # Print first 5 empty responses
+                        print(f"--- EMPTY RESPONSE/COMPLETION (Response index: {i}) ---")
+                        print(f"Response object: {response}")
+                        print("----------------------------------------------------")
+                continue
+
+            user_query = parse_tags(completion, "user_query")
+            assistant_response_full = parse_tags(completion, "assistant_response")
+            scratchpad = parse_tags(completion, "scratchpad")
+            think_text = parse_tags(assistant_response_full, "think")
+            assistant_response = assistant_response_full
+
+            # Handle cases where the model truncates the output and misses the closing tag.
+            if completion and not assistant_response and "<assistant_response>" in completion:
+                assistant_response = completion.split("<assistant_response>", 1)[1].strip()
+            
+            if not user_query or not assistant_response:
+                unsuccessful_parses += 1
+                if unsuccessful_parses <= 5: # Print first 5 parse failures
+                    print(f"--- PARSE FAILURE {unsuccessful_parses} (Response index: {i}) ---")
+                    print(f"Completion content:\n{completion}")
+                    print("----------------------------------------------------")
+                continue
+            
+            core_chats_results.append({
                 "user_query": user_query,
                 "assistant_response": assistant_response,
+                "think": think_text,
                 "scratchpad": scratchpad,
-                **chat_specs[i % len(chat_specs)], # Get corresponding chat spec
-            }
-        )
+                **chat_spec_repeats[i],
+            })
     
-    # Check for existing files and get approval from user if we will overwrite an existing chat corpus
+    # --- Combine and Finalize ---
+    results = core_chats_results + basic_chats
+    random.shuffle(results) # Shuffle to mix the chat types
+
+    print(f"Total chats generated before filtering: {len(results)}")
+    if 'unsuccessful_parses' in locals():
+        print(f"Total unsuccessful parses: {unsuccessful_parses}")
+    
+    if debug and results:
+        print(f"\nDEBUG: Sample assistant responses before filtering:")
+        for i, result in enumerate(results[:3]):
+            print(f"Response {i+1}: {result['assistant_response'][:200]}...")
+        print(f"Character name for filtering: '{character_name}'")
+    
     output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
     if os.path.exists(output_file_path) and not overwrite_existing_chats:
-        # Ask for approval if file would be overwritten
-        approval_result = _check_overwrite_approval([output_file_path], "chat generation", output_path)
+        print(f"File exists: {output_file_path}. Not overwriting.")
+    else:
+        save_jsonl(output_file_path, results)
+        print(f"Saved {len(results)} chats for character {character_id} to {output_file_path}")
 
-        # If user doesn't approve, cancel the operation
-        if approval_result is False:
-            print("Operation cancelled by user.")
-            return
-        
-        # If user provides a new path, update the config and output file path
-        elif isinstance(approval_result, str):
-            # User provided a new path
-            output_path = approval_result
-            print(f"Using new output path: {output_path}")
-            # Update config and output file path with new base path
-            config["output_path"] = output_path
-            output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
-
-    # Save results and print completion message
-    save_jsonl(output_file_path, results)
-    print(f"Saved {len(results)} chats for character {character_id} to {output_file_path}")
     print(f"Total time: {(time.time() - start_time)/60:.2f} minutes")
 
 
 if __name__ == "__main__":
-    fire.Fire()
-
-    # I use this code to automatically send pushbullet notifications to my phone when the script finishes.
-    # Ask me if you want to use this and I can send the extra info to set it up.
-    #wrap_in_push(lambda: fire.Fire(), f"synth_doc_generation {sys.argv}", push_on=True)
+    fire.Fire({
+        'generate_chats': generate_chats,
+    })

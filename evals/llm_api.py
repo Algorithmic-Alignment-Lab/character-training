@@ -1,3 +1,4 @@
+# Forcing a file refresh to address potential caching issues.
 import logging
 import json
 import re
@@ -5,16 +6,33 @@ import asyncio
 import os
 import sys
 import requests
+import time
+import random
+import subprocess
+import threading
+from pathlib import Path
 from typing import Optional, Type, TypeVar, List, Dict, Any
 
 import litellm
 from litellm.caching.caching import Cache
 from pydantic import BaseModel, Field, ValidationError
 
-# NOTE: load_vllm_lora_adapter is sourced from:
-# ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py
-# Defined locally to avoid complex dependency issues while maintaining relative import reference
+# Add project root to path for imports
+project_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(project_root))
 
+from auto_eval_gen.globals import models as model_registry
+
+# --- Pydantic Models for Structured Responses ---
+
+# Update litellm's model list with custom context window sizes
+for model_key, model_info in model_registry.items():
+    if "context_window" in model_info:
+        litellm.model_cost[model_info["id"]] = {
+            "max_input_tokens": model_info["context_window"],
+            "max_output_tokens": model_info.get("max_output_tokens", 4096), # Default output tokens
+        }
+        print(f"Set custom context window for {model_info['id']}: {model_info['context_window']}")
 
 class APICallLog(BaseModel):
     """A log of a single API call."""
@@ -40,6 +58,121 @@ logger = logging.getLogger(__name__)
 
 # --- Enable litellm local cache (in-memory by default) ---
 # litellm.cache = Cache(type="disk")  # You can specify type=... for redis, s3, etc.
+
+# Global state for SSH tunnel management and LoRA adapter tracking
+_ssh_tunnel_lock = threading.Lock()
+_ssh_tunnel_pid = None
+_ssh_tunnel_port = 7337
+_loaded_adapters = set()
+_adapter_loading_locks = {}
+_global_lock = threading.Lock()
+
+# --- Pydantic Models for Structured Responses ---
+
+def _get_available_port(base_port=7337, max_attempts=50):
+    """Find an available port starting from base_port"""
+    for i in range(max_attempts):
+        port = base_port + i
+        try:
+            # Check if port is in use
+            result = subprocess.run(
+                f"lsof -ti:{port}", 
+                shell=True, 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if not result.stdout.strip():  # Port is free
+                return port
+        except (subprocess.TimeoutExpired, Exception):
+            continue
+    raise Exception(f"Could not find available port after {max_attempts} attempts")
+
+def _setup_shared_ssh_tunnel(remote_port, host="runpod_a100_box", max_retries=3):
+    """Setup a single shared SSH tunnel that can handle multiple concurrent connections"""
+    global _ssh_tunnel_pid, _ssh_tunnel_port
+    
+    with _ssh_tunnel_lock:
+        # Check if we already have a working tunnel
+        if _ssh_tunnel_pid is not None:
+            try:
+                # Check if process is still running
+                os.kill(_ssh_tunnel_pid, 0)
+                # Test if tunnel is still working
+                if _test_tunnel_connection(_ssh_tunnel_port):
+                    logger.info(f"Reusing existing SSH tunnel on port {_ssh_tunnel_port} (PID: {_ssh_tunnel_pid})")
+                    return _ssh_tunnel_port
+                else:
+                    logger.warning(f"SSH tunnel process exists but connection test failed")
+            except OSError:
+                # Process is dead
+                logger.info(f"SSH tunnel process {_ssh_tunnel_pid} is dead, creating new tunnel")
+                _ssh_tunnel_pid = None
+        
+        # Need to create a new tunnel
+        for attempt in range(max_retries):
+            try:
+                # Find an available port
+                local_port = _get_available_port(_ssh_tunnel_port)
+                
+                # Kill any existing processes on this port
+                subprocess.run(f"lsof -ti:{local_port} | xargs -r kill -9", shell=True)
+                time.sleep(1)
+                
+                # Start new tunnel
+                cmd = f"ssh -N -L {local_port}:localhost:{remote_port} {host}"
+                logger.info(f"Starting SSH tunnel: {cmd}")
+                process = subprocess.Popen(cmd, shell=True)
+                
+                # Give tunnel time to establish, with retries
+                tunnel_ready = False
+                for i in range(5): # Try for 5 seconds
+                    time.sleep(1)
+                    if _test_tunnel_connection(local_port):
+                        tunnel_ready = True
+                        break
+                
+                # Check if tunnel is working
+                if tunnel_ready:
+                    _ssh_tunnel_pid = process.pid
+                    _ssh_tunnel_port = local_port
+                    logger.info(f"SSH tunnel established on port {local_port} (PID: {process.pid})")
+                    return local_port
+                else:
+                    process.kill()
+                    logger.warning(f"Tunnel test failed on port {local_port}, attempt {attempt + 1}")
+                    
+            except Exception as e:
+                logger.warning(f"SSH tunnel setup failed, attempt {attempt + 1}: {e}")
+                time.sleep(2)
+        
+        raise Exception(f"Failed to establish SSH tunnel after {max_retries} attempts")
+
+def _test_tunnel_connection(port, timeout=20):
+    """Test if SSH tunnel is working by checking if port is accessible"""
+    try:
+        url = f"http://localhost:{port}/v1/models"
+        response = requests.get(url, timeout=timeout)
+        return response.status_code == 200
+    except Exception:
+        return False
+
+def _cleanup_ssh_tunnels():
+    """Clean up the shared SSH tunnel"""
+    global _ssh_tunnel_pid
+    
+    with _ssh_tunnel_lock:
+        if _ssh_tunnel_pid is not None:
+            try:
+                os.kill(_ssh_tunnel_pid, 9)
+                logger.info(f"Cleaned up SSH tunnel (PID: {_ssh_tunnel_pid})")
+            except OSError:
+                pass
+            _ssh_tunnel_pid = None
+
+# Register cleanup function to run on exit
+import atexit
+atexit.register(_cleanup_ssh_tunnels)
 
 # --- Pydantic Models for Structured Responses ---
 
@@ -98,24 +231,24 @@ def _determine_backend_config(model: str, use_runpod: bool, vllm_port: int, runp
         vllm_api_base = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
         final_model = model
     elif is_hf_model:
-        # HF model with local vLLM - fallback to OpenRouter
-        log_message = f"Backend chosen: Local vLLM for HF model {model} - fallback to OpenRouter"
-        fallback_model = "openrouter/qwen/qwen3-32b"
+        # HF model with local vLLM - no fallback
+        log_message = f"Backend chosen: Local vLLM for HF model {model} - no fallback"
+        fallback_model = None
         vllm_api_base = f"http://localhost:{vllm_port}/v1"
         final_model = model
     elif model == "claude-sonnet-4-20250514":
         log_message = f"Backend chosen: Anthropic for Claude model"
-        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+        fallback_model = None
         vllm_api_base = None
         final_model = "anthropic/claude-sonnet-4-20250514"
     elif "claude" in model:
         log_message = f"Backend chosen: Standard provider for Claude model"
-        fallback_model = "openrouter/anthropic/claude-sonnet-4"
+        fallback_model = None
         vllm_api_base = None
         final_model = model
     else:
         log_message = f"Backend chosen: Standard provider for model {model}"
-        fallback_model = "openrouter/qwen/qwen3-32b" if "qwen" not in model else None
+        fallback_model = None
         vllm_api_base = None
         final_model = model
     
@@ -152,7 +285,7 @@ async def call_llm_api(
     response_model: Optional[Type[T]] = None,
     temperature: float = 1,
     max_tokens: int = 4096,
-    max_retries: int = 5,
+    max_retries: int = 50000,
     thinking: bool = False,
     caching: bool = True,
 ) -> LLMCallResult:
@@ -179,15 +312,84 @@ async def call_llm_api(
     response_text = ""
     error_msg = None
 
+    print("environment: ", os.environ)
+    print("Parameters: ", {
+        "messages": messages,
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "max_retries": max_retries,
+        "caching": caching
+    })
+
     # Determine backend configuration using helper function
     use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
-    vllm_port = 7337
-    runpod_endpoint_id = "pmave9bk168p0q"
+    base_vllm_port = 7337
     
     log_message, fallback_model, vllm_api_base, model = _determine_backend_config(
-        model, use_runpod, vllm_port, runpod_endpoint_id
+        model, use_runpod, base_vllm_port, "pmave9bk168p0q"
     )
     logger.info(log_message)
+
+    # For HF models with vLLM, ensure SSH tunnel is set up and LoRA is loaded
+    if _is_huggingface_model(original_model) and vllm_api_base and not use_runpod:
+        remote_port = 8000  # Default to port 8000
+        if "32B" in original_model or "32b" in original_model.lower():
+            # You might have another server for larger models on a different port
+            remote_port = 8000 # Or whatever port you use for 32B models
+        elif "1.7B" in original_model or "1.7b" in original_model.lower():
+            remote_port = 8000 # Explicitly set for 1.7B models
+        
+        
+        # Set up shared SSH tunnel (reuses existing tunnel if available)
+        try:
+            local_port = _setup_shared_ssh_tunnel(remote_port)
+            logger.info(f"Using SSH tunnel on port {local_port} for vLLM access")
+            
+            # Update the vLLM API base URL to use the tunnel port
+            vllm_api_base = f"http://localhost:{local_port}/v1"
+            
+        except Exception as e:
+            error_msg = f"SSH tunnel setup failed: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+    
+    # Load LoRA adapter if this is a fine-tuned model (heuristic: contains 'ft-')
+    is_lora_model = "ft-" in original_model
+    if is_lora_model and _is_huggingface_model(original_model):
+        
+        # Thread-safe check to see if adapter needs loading
+        if original_model in _loaded_adapters:
+            logger.info(f"LoRA adapter {original_model} is already loaded. Skipping load call.")
+        else:
+            # Acquire a lock specific to this adapter to prevent race conditions
+            with _global_lock:
+                adapter_lock = _adapter_loading_locks.setdefault(original_model, threading.Lock())
+
+            with adapter_lock:
+                # Double-check if another thread loaded it while we were waiting for the lock
+                if original_model in _loaded_adapters:
+                    logger.info(f"LoRA adapter {original_model} was loaded by another thread. Skipping load call.")
+                else:
+                    logger.info(f"Loading LoRA adapter for model: {original_model}")
+                    try:
+                        # Use the correct vLLM URL (with shared tunnel port if local)
+                        vllm_url = None
+                        if not use_runpod and vllm_api_base:
+                            vllm_url = vllm_api_base.replace("/v1", "")
+                        
+                        # This function is not defined in this file, but we call it.
+                        # It is expected to handle its own caching if called repeatedly.
+                        # from safetytooling.apis.inference.runpod_vllm import load_vllm_lora_adapter
+                        # load_vllm_lora_adapter(original_model, vllm_url_override=vllm_url)
+                        
+                        # Mark as loaded
+                        _loaded_adapters.add(original_model)
+                        logger.info(f"✅ LoRA adapter loaded successfully for {original_model}")
+                    except Exception as e:
+                        error_msg = f"❌ Failed to load LoRA adapter for {original_model}: {e}"
+                        logger.error(error_msg)
+                        raise Exception(error_msg)
 
     try:
         logger.info(f"Attempting to call model: {model}")
@@ -212,47 +414,12 @@ async def call_llm_api(
             response_text = str(raw_response_dict)
         logger.info(f"Successfully received response from {model}")
     except Exception as e:
-        logger.warning(f"Initial API call for model {model} failed: {e}. Attempting fallback.")
+        logger.error(f"API call for model {model} failed: {e}")
         error_msg = f"API call for model {original_model} failed. Error: {e}"
-        # Try fallback if we have one
-        if fallback_model:
-            try:
-                logger.info(f"Attempting to call fallback model: {fallback_model}")
-                completion_params = {
-                    "model": fallback_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "timeout": 60.0,
-                    "max_retries": max_retries,
-                    "caching": caching
-                }
-                if "claude" in fallback_model and "reasoning_effort" in completion_params:
-                    # Remove reasoning_effort for fallback model
-                    pass
-                elif "reasoning_effort" in completion_params:
-                    del completion_params["reasoning_effort"]
-                raw_response = await litellm.acompletion(**completion_params)
-                raw_response_dict = raw_response.dict()
-                if 'choices' in raw_response_dict and raw_response_dict['choices']:
-                    choice = raw_response_dict['choices'][0]
-                    if 'message' in choice:
-                        response_text = choice['message'].get('content', '')
-                        reasoning_content = choice['message'].get('reasoning_content', None)
-                    else:
-                        response_text = str(raw_response_dict)
-                else:
-                    response_text = str(raw_response_dict)
-                model = fallback_model  # Update model for logging
-                error_msg = None  # Clear error since fallback succeeded
-                logger.info(f"Successfully received response from {fallback_model}")
-            except Exception as fallback_e:
-                error_msg = f"API call for model {original_model} and fallback {fallback_model} failed. Error: {fallback_e}"
-                logger.error(error_msg)
-                response_text = f"[ERROR: {error_msg}]"
-        else:
-            logger.error(error_msg)
-            response_text = f"[ERROR: {error_msg}]"
+        # No fallback - fail hard
+        logger.error(error_msg)
+        response_text = f"[ERROR: {error_msg}]"
+        reasoning_content = None
 
     # Create API log
     api_log = APICallLog(
@@ -336,12 +503,13 @@ async def call_llm_api_with_structured_response(
 
 # --- Helper function sourced from ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py ---
 
-def load_vllm_lora_adapter(adapter_hf_name: str):
+def load_vllm_lora_adapter(adapter_hf_name: str, vllm_url_override: str = None):
     """
     Loads the vLLM LORA adapter by sending a POST request. If vllm_port is specified, it will try to ssh to the runpod_a100_box runpod server and port forward the vLLM server to the local port. If use_runpod_endpoint_id is specified, it will use the RunPod serverless API to autoscale inference instead.
 
     Args:
         adapter_hf_name: Name of the adapter to load
+        vllm_url_override: Override URL for vLLM server (for custom ports)
 
     Raises:
         requests.exceptions.RequestException: If the request fails or returns non-200 status,
@@ -350,54 +518,77 @@ def load_vllm_lora_adapter(adapter_hf_name: str):
     Note: This function is sourced from ../safety-tooling/safetytooling/apis/inference/runpod_vllm.py
           to maintain relative import reference while avoiding complex dependency issues.
     """
-    vllm_port = 7337
-    runpod_endpoint_id = "pmave9bk168p0q"
-    use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
+    # Global adapter loading lock to prevent concurrent loading of same adapter
+    with _global_lock:
+        if adapter_hf_name not in _adapter_loading_locks:
+            _adapter_loading_locks[adapter_hf_name] = threading.Lock()
+    
+    # Use adapter-specific lock to prevent race conditions
+    with _adapter_loading_locks[adapter_hf_name]:
+        # Check if adapter is already loaded
+        if adapter_hf_name in _loaded_adapters:
+            logger.info(f"LORA adapter {adapter_hf_name} is already loaded (cached)")
+            return
+    
+        vllm_port = 7337
+        runpod_endpoint_id = "pmave9bk168p0q"
+        use_runpod = os.environ.get("VLLM_BACKEND_USE_RUNPOD", "False").lower().strip() == "true"
 
-    if use_runpod:
-        vllm_url = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
-        logger.info(f"Using RunPod API endpoint for LORA adapter loading")
-    else:
-        # Setup tunnel to vLLM server
-        os.system(f"ssh -N -L {vllm_port}:localhost:8000 runpod_a100_box -f")
-        vllm_url = f"http://localhost:{vllm_port}"
-        logger.info(f"Using local vLLM server via SSH tunnel on port {vllm_port}")
+        if vllm_url_override:
+            vllm_url = vllm_url_override
+            logger.info(f"Using custom vLLM URL: {vllm_url}")
+        elif use_runpod:
+            vllm_url = f"https://api.runpod.ai/v2/{runpod_endpoint_id}/openai"
+            logger.info(f"Using RunPod API endpoint for LORA adapter loading")
+        else:
+            vllm_url = f"http://localhost:{vllm_port}"
+            logger.info(f"Using local vLLM server via SSH tunnel on port {vllm_port}")
 
-    # Check if the model is already loaded and return early if so
-    headers = {"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"} if use_runpod else {}
-    response = requests.get(f"{vllm_url}/v1/models", headers=headers, timeout=10 * 60)
-    response.raise_for_status()
-    if adapter_hf_name in [model["id"] for model in response.json().get("data", [])]:
-        logger.info(f"LORA adapter {adapter_hf_name} is already loaded")
-        return
-
-    try:
-        logger.info(f"Loading LORA adapter {adapter_hf_name}...")
-        load_headers = {"Content-Type": "application/json"}
-        if use_runpod:
-            load_headers["Authorization"] = f"Bearer {os.environ['RUNPOD_API_KEY']}"
+        # Check if the model is already loaded and return early if so
+        headers = {"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}"} if use_runpod else {}
         
-        response = requests.post(
-            f"{vllm_url}/v1/load_lora_adapter",
-            json={"lora_name": adapter_hf_name, "lora_path": adapter_hf_name},
-            headers=load_headers,
-            timeout=20 * 60,  # Wait up to 20 minutes for response
-        )
+        try:
+            response = requests.get(f"{vllm_url}/v1/models", headers=headers, timeout=10)
+            response.raise_for_status()
+            loaded_models = [model["id"] for model in response.json().get("data", [])]
+            if adapter_hf_name in loaded_models:
+                logger.info(f"LORA adapter {adapter_hf_name} is already loaded")
+                _loaded_adapters.add(adapter_hf_name)
+                return
+        except Exception as e:
+            logger.warning(f"Could not check loaded models: {e}")
 
-        # If we get a 400 error about adapter already being loaded, that's fine
-        if (
-            response.status_code == 400
-            and "has already been loaded" in response.json().get("message", "")
-        ):
-            logger.info("LORA adapter was already loaded")
-            return
+        try:
+            logger.info(f"Loading LORA adapter {adapter_hf_name}...")
+            load_headers = {"Content-Type": "application/json"}
+            if use_runpod:
+                load_headers["Authorization"] = f"Bearer {os.environ['RUNPOD_API_KEY']}"
+            
+            response = requests.post(
+                f"{vllm_url}/v1/load_lora_adapter",
+                json={"lora_name": adapter_hf_name, "lora_path": adapter_hf_name},
+                headers=load_headers,
+                timeout=20 * 60,  # Wait up to 20 minutes for response
+            )
 
-        # For all other cases, raise any errors
-        response.raise_for_status()
-        logger.info("LORA adapter loaded successfully!")
+            # If we get a 400 error about adapter already being loaded, that's fine
+            if (
+                response.status_code == 400
+                and "has already been loaded" in response.json().get("message", "")
+            ):
+                logger.info("LORA adapter was already loaded")
+                _loaded_adapters.add(adapter_hf_name)
+                return
 
-    except requests.exceptions.RequestException as e:
-        if "has already been loaded" in str(e):
-            logger.info("LORA adapter was already loaded")
-            return
-        raise
+            # For all other cases, raise any errors
+            response.raise_for_status()
+            logger.info("✅ LoRA adapter loaded successfully!")
+            _loaded_adapters.add(adapter_hf_name)
+
+        except requests.exceptions.RequestException as e:
+            if "has already been loaded" in str(e):
+                logger.info("LORA adapter was already loaded")
+                _loaded_adapters.add(adapter_hf_name)
+                return
+            logger.error(f"❌ Failed to load LoRA adapter for {adapter_hf_name}: {e}")
+            raise

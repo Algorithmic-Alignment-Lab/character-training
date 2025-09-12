@@ -6,25 +6,13 @@ import wave
 from pathlib import Path
 from string import Template
 from subprocess import PIPE, Popen
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None  # Optional dependency stub
-except ImportError:
-    genai = None  # Optional dependency stub
+import google.generativeai as genai
 import librosa
-try:
-    import numpy as np
-except ImportError:
-    np = None  # Optional dependency stub
+import numpy as np
 import scipy.io.wavfile as wavfile
 import soundfile as sf
-try:
-    from vertexai.generative_models import Part
-except ImportError:
-    Part = None  # Optional dependency stub
+from vertexai.generative_models import Part
 
 
 class WAVFile:
@@ -325,7 +313,7 @@ def convert_to_wav_ffmpeg(input_path: str, output_path: str, sample_rate=16000):
         raise
 
 
-def prepare_audio_part(audio_file: str, use_vertexai: bool = False) -> Any:
+def prepare_audio_part(audio_file: str, use_vertexai: bool = False) -> Part | genai.types.file_types.File:
     if use_vertexai:
         audio_bytes = load_audio(audio_file)
         return Part.from_data(data=audio_bytes, mime_type=get_mime_type(audio_file))
