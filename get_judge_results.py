@@ -1,5 +1,6 @@
 import json
 import datetime
+import argparse
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -59,10 +60,13 @@ FOLDER_MAPPING = [
 FOLDER_MAPPING = [
     # {"clyde_gpt41_nano": "Nano Base"},
     # {"clyde_gpt41_nano_prompt": "Nano Prompt"},
-    {"clyde_gpt41_nano_ft1": "Nano Fine Tune 1"},
-    {"clyde_gpt41_nano_ft1_prompt": "Nano Fine Tune 1 - Prompt"},
-    # {"clyde_gpt41_nano_ft1think": "Nano Fine Tune 1 - Think"}
+    {"clyde_gpt41_mini": "Mini Base"},
+    {"clyde_gpt41_mini_prompt": "Mini Prompt"},
+    {"clyde_gpt41_mini_ft": "Mini Fine Tune"},
+    {"clyde_gpt41_mini_ft_prompt": "Mini Fine Tune - Prompt"}
 ]
+
+
 
 BASE_RESULTS_DIR = Path("auto_eval_gen/results/transcripts")
 OUTPUT_DIR = Path("evaluation_graphs")
@@ -92,6 +96,186 @@ CATEGORIES_TO_PLOT = [
 
 
 # --- End Configuration ---
+
+def _create_readable_display_name(suffix: str):
+    """Create a readable display name from a folder suffix."""
+    if not suffix:
+        return "Base"
+    
+    # Remove leading/trailing underscores and split
+    suffix = suffix.strip('_')
+    if not suffix:
+        return "Base"
+    
+    # Common patterns mapping
+    pattern_mappings = {
+        'base': 'Base',
+        'base_prompt': 'Base Prompt',
+        'ft': 'FT',
+        'ft_prompt': 'FT Prompt',
+        'ft1': 'FT',
+        'ft1_prompt': 'FT Prompt',
+        'ft2': 'FT',
+        'ft2_prompt': 'FT Prompt',
+        'ft1_1': 'FT',
+        'ft1_1_prompt': 'FT Prompt',
+        'ft2_1': 'FT',
+        'ft2_1_prompt': 'FT Prompt',
+        'ft2_1_large': 'FT Large',
+        'ft2_1_large_prompt': 'FT Large Prompt',
+        'ft1_0.25': 'FT',
+        'ft1_0.25_prompt': 'FT Prompt',
+        'ft2_0.25': 'FT',
+        'ft2_0.25_prompt': 'FT Prompt',
+        'gpt41_mini': 'GPT-4.1 Mini',
+        'gpt41_mini_prompt': 'GPT-4.1 Mini Prompt',
+        'gpt41_mini_ft': 'GPT-4.1 Mini FT',
+        'gpt41_mini_ft_prompt': 'GPT-4.1 Mini FT Prompt',
+        'gpt41_mini_ft_large': 'GPT-4.1 Mini FT Large',
+        'gpt41_mini_ft_large_prompt': 'GPT-4.1 Mini FT Large Prompt',
+        'gpt41_nano': 'GPT-4.1 Nano',
+        'gpt41_nano_prompt': 'GPT-4.1 Nano Prompt',
+        'gpt41_nano_ft1': 'GPT-4.1 Nano FT',
+        'gpt41_nano_ft1_prompt': 'GPT-4.1 Nano FT Prompt',
+        'gpt41_nano_ft1think': 'GPT-4.1 Nano FT Think',
+        'gpt41_nano_ft1think_prompt': 'GPT-4.1 Nano FT Think Prompt',
+        'gpt41_prompt': 'GPT-4.1 Prompt',
+        'qwen32b_base': 'Qwen32B Base',
+        'qwen32b_prompt': 'Qwen32B Prompt',
+        'sonnet_base': 'Sonnet Base',
+        'sonnet_prompt': 'Sonnet Prompt',
+    }
+    
+    # Check for exact match first
+    if suffix in pattern_mappings:
+        return pattern_mappings[suffix]
+    
+    # Check for partial matches
+    for pattern, display in pattern_mappings.items():
+        if suffix.startswith(pattern):
+            return display
+    
+    # Fallback: convert to title case
+    return suffix.replace('_', ' ').title()
+
+def load_character_definitions():
+    """Load character definitions from the JSON file."""
+    char_def_path = Path("auto_eval_gen/character_definitions.json")
+    if not char_def_path.exists():
+        print(f"Warning: Character definitions file not found at {char_def_path}")
+        return {}
+    
+    try:
+        with open(char_def_path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading character definitions: {e}")
+        return {}
+
+def get_character_categories(character_id: str, char_definitions: dict):
+    """Get categories (evaluations) for a specific character from character definitions."""
+    if character_id not in char_definitions:
+        print(f"Warning: Character '{character_id}' not found in character definitions")
+        return []
+    
+    character = char_definitions[character_id]
+    evaluations = character.get("evaluations", [])
+    
+    if not evaluations:
+        print(f"Warning: No evaluations found for character '{character_id}'")
+        return []
+    
+    return evaluations
+
+def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: list):
+    """
+    Dynamically determine folder mapping based on all timestamps/folders found in the results.
+    This scans all subdirectories in each behavior folder to find all available evaluation runs.
+    """
+    folder_mapping = []
+    
+    if not base_dir.exists():
+        print(f"Warning: Base directory '{base_dir}' does not exist")
+        return folder_mapping
+    
+    # Get all behavior folders that match the categories
+    behavior_folders = []
+    for category in categories:
+        category_folder = base_dir / category
+        if category_folder.exists() and category_folder.is_dir():
+            behavior_folders.append(category_folder)
+    
+    if not behavior_folders:
+        print(f"Warning: No behavior folders found for categories {categories} in {base_dir}")
+        return folder_mapping
+    
+    # Collect all unique evaluation run folders across all behaviors
+    all_eval_folders = set()
+    
+    for behavior_folder in behavior_folders:
+        # Look for subdirectories (evaluation runs) in each behavior folder
+        for eval_folder in behavior_folder.iterdir():
+            if eval_folder.is_dir():
+                # Check if this folder has a judgment.json file
+                judgment_file = eval_folder / "judgment.json"
+                if judgment_file.exists():
+                    all_eval_folders.add(eval_folder.name)
+    
+    # Convert to folder mapping with display names
+    for folder_name in sorted(all_eval_folders):
+        # Create a more readable display name
+        display_name = folder_name
+        
+        # Handle timestamp patterns (YYYYMMDD-HHMMSS) - these are base models
+        if len(folder_name) == 15 and folder_name[8] == '-' and folder_name.replace('-', '').isdigit():
+            display_name = "Base"
+        # Handle timestamp patterns that are part of longer folder names
+        elif any(char.isdigit() for char in folder_name) and folder_name.count('-') >= 1 and not "ft_" in folder_name.lower():
+            # Check if this looks like a timestamp-based folder name
+            parts = folder_name.split('_')
+            for part in parts:
+                if len(part) == 15 and part[8] == '-' and part.replace('-', '').isdigit():
+                    display_name = "Base"
+                    break
+        
+        # Handle character-specific patterns with improved naming
+        elif folder_name.startswith(character_id + "_"):
+            suffix = folder_name.replace(character_id + "_", "")
+            display_name = _create_readable_display_name(suffix)
+        elif folder_name.startswith(character_id):
+            suffix = folder_name.replace(character_id, "")
+            display_name = _create_readable_display_name(suffix)
+        else:
+            display_name = _create_readable_display_name(folder_name)
+        
+        # Handle special cases for consistent naming
+        if "ft_" in folder_name.lower() and "prompt" in folder_name.lower():
+            display_name = "FT Prompt"
+        elif "ft_" in folder_name.lower():
+            display_name = "FT"
+        elif "prompt" in folder_name.lower() and any(char.isdigit() for char in folder_name):
+            # This handles timestamp + prompt patterns
+            display_name = "Base Prompt"
+        
+        folder_mapping.append({folder_name: display_name})
+    
+    return folder_mapping
+
+def get_character_config(character_id: str, base_dir: Path):
+    """
+    Get folder mapping and categories for a specific character.
+    Categories come from character definitions, folder mapping is dynamically determined.
+    """
+    # Load character definitions
+    char_definitions = load_character_definitions()
+    
+    # Get categories from character definitions
+    categories = get_character_categories(character_id, char_definitions)
+    
+    # Get dynamic folder mapping based on actual files
+    folder_mapping = get_dynamic_folder_mapping(base_dir, character_id, categories)
+    
+    return folder_mapping, categories
 
 def _normalize_mapping(folder_mapping):
     """Return (ordered_pairs, mapping_dict) from either list[dict] or dict.
@@ -210,7 +394,7 @@ def pretty_print_summary(scores: dict, folder_mapping):
 
     console.print(table)
 
-def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
+def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None, categories: list = None):
     """
     Creates and saves a bar chart comparing the success scores for each behavior
     across the different evaluation runs.
@@ -228,9 +412,15 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
         behavior_scores = scores.get(folder_name, {})
         display_name = mapping_dict.get(folder_name, folder_name)
         for behavior, score in behavior_scores.items():
+            # Remove character prefix and format behavior name
+            behavior_clean = behavior
+            if character_id and behavior.startswith(character_id.split('_')[0] + "_"):
+                behavior_clean = behavior.replace(character_id.split('_')[0] + "_", "")
+            behavior_clean = behavior_clean.replace("_", " ").title()
+            
             plot_data.append({
                 "Evaluation": display_name,
-                "Behavior": behavior.replace("clyde_", "").replace("_", " ").title(),
+                "Behavior": behavior_clean,
                 "Score": score
             })
     
@@ -240,8 +430,13 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
         
     df_detailed = pd.DataFrame(plot_data)
     
-    # Sort behaviors for consistent plotting order
-    behavior_order = [b.replace("clyde_", "").replace("_", " ").title() for b in CATEGORIES_TO_PLOT]
+    # Sort behaviors for consistent plotting order using dynamic categories
+    if categories:
+        behavior_order = [b.replace(character_id.split('_')[0] + "_", "").replace("_", " ").title() for b in categories]
+    else:
+        # Fallback to existing behavior names in data
+        behavior_order = sorted(df_detailed['Behavior'].unique())
+    
     df_detailed['Behavior'] = pd.Categorical(df_detailed['Behavior'], categories=behavior_order, ordered=True)
     df_detailed = df_detailed.sort_values('Behavior')
 
@@ -257,7 +452,15 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
         palette="viridis"
     )
 
-    ax.set_title("Model Performance Comparison by Behavior", fontsize=18, weight='bold')
+    # Create title with character ID if provided
+    if character_id:
+        # Convert character_id to a readable name
+        char_name = character_id.replace('_', ' ').title()
+        title = f"{char_name} - Model Performance Comparison by Behavior"
+    else:
+        title = "Model Performance Comparison by Behavior"
+    
+    ax.set_title(title, fontsize=18, weight='bold')
     ax.set_xlabel("Behavior", fontsize=14)
     ax.set_ylabel("Average Eval Success Score", fontsize=14)
     ax.set_ylim(0, 10)
@@ -274,7 +477,7 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     plt.close(fig)
 
 
-def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_dir: Path):
+def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None):
     """
     Creates a graph comparing self knowledge behavior against the average of other behaviors.
     """
@@ -324,7 +527,15 @@ def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_
         palette="Set2"
     )
 
-    ax.set_title("Self Knowledge vs Average Other Behaviors", fontsize=18, weight='bold')
+    # Create title with character ID if provided
+    if character_id:
+        # Convert character_id to a readable name
+        char_name = character_id.replace('_', ' ').title()
+        title = f"{char_name} - Self Knowledge vs Average Other Behaviors"
+    else:
+        title = "Self Knowledge vs Average Other Behaviors"
+    
+    ax.set_title(title, fontsize=18, weight='bold')
     ax.set_xlabel("Evaluation Run", fontsize=14)
     ax.set_ylabel("Score", fontsize=14)
     ax.set_ylim(0, 10)
@@ -411,7 +622,39 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
     console.print(table)
 
 
-if __name__ == "__main__":
+def main():
+    """Main function with CLI argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="Generate judge results and comparison graphs for character evaluations",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python get_judge_results.py --character-id clyde
+  python get_judge_results.py --character-id socratica
+  python get_judge_results.py --character-id rudi_storyteller_companion_backstory
+        """
+    )
+    
+    parser.add_argument(
+        "--character-id", 
+        required=True,
+        help="Character ID to analyze (e.g., 'clyde', 'socratica', 'rudi_storyteller_companion_backstory')"
+    )
+    
+    parser.add_argument(
+        "--output-dir",
+        default="evaluation_graphs",
+        help="Directory to save output graphs (default: evaluation_graphs)"
+    )
+    
+    parser.add_argument(
+        "--results-dir",
+        default="auto_eval_gen/results/transcripts",
+        help="Base directory containing evaluation results (default: auto_eval_gen/results/transcripts)"
+    )
+    
+    args = parser.parse_args()
+    
     # Ensure matplotlib and seaborn are installed
     try:
         import matplotlib
@@ -420,20 +663,47 @@ if __name__ == "__main__":
     except ImportError:
         print("This script requires matplotlib, seaborn, and rich.")
         print("Please install them using: pip install matplotlib seaborn rich")
-        exit(1)
+        return 1
 
-    simple_scores, detailed_scores = get_judgment_scores(BASE_RESULTS_DIR, FOLDER_MAPPING, CATEGORIES_TO_PLOT)
+    print(f"🎭 Analyzing judge results for character: {args.character_id}")
+    print(f"📁 Results directory: {args.results_dir}")
+    print(f"📊 Output directory: {args.output_dir}")
+    print("=" * 60)
+    
+    # Update global variables for this run
+    global BASE_RESULTS_DIR, OUTPUT_DIR
+    BASE_RESULTS_DIR = Path(args.results_dir)
+    OUTPUT_DIR = Path(args.output_dir)
+    
+    # Get character-specific configuration
+    folder_mapping, categories = get_character_config(args.character_id, BASE_RESULTS_DIR)
+    
+    print(f"📋 Using {len(categories)} categories: {', '.join(categories)}")
+    print(f"📂 Using {len(folder_mapping)} folder mappings")
+    print("=" * 60)
+    
+    # Get judgment scores
+    simple_scores, detailed_scores = get_judgment_scores(BASE_RESULTS_DIR, folder_mapping, categories)
 
     if any(s for s in simple_scores.values()) or any(detailed_scores.values()):
         # Print overall averages (graphs use 'simple_scores')
-        pretty_print_summary(simple_scores, FOLDER_MAPPING)
+        pretty_print_summary(simple_scores, folder_mapping)
 
         # Print new per-variation table using detailed data
-        pretty_print_variation_table(detailed_scores, FOLDER_MAPPING)
+        pretty_print_variation_table(detailed_scores, folder_mapping)
 
         # Generate graphs using the simple aggregated scores
-        create_detailed_comparison_graph(simple_scores, FOLDER_MAPPING, OUTPUT_DIR)
-        create_self_knowledge_comparison_graph(simple_scores, FOLDER_MAPPING, OUTPUT_DIR)
+        create_detailed_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, categories)
+        create_self_knowledge_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id)
+        
+        print(f"\n✅ Analysis complete! Check the graphs in: {OUTPUT_DIR}")
     else:
-        print("\nNo judgment files found for the configured folders and categories.")
-        print("Please check your FOLDER_MAPPING and that the directories exist in:", BASE_RESULTS_DIR)
+        print(f"\n❌ No judgment files found for character '{args.character_id}'")
+        print(f"Please check that evaluation results exist in: {BASE_RESULTS_DIR}")
+        print("Make sure you have run Step 6 evaluations first.")
+        return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    exit(main())

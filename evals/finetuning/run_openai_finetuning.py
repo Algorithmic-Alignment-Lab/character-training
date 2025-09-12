@@ -199,6 +199,46 @@ def _update_finetuned_json(job_id: str, model_id: str = None, model_info: dict =
     with open(json_file, 'w') as f:
         json.dump(existing_data, f, indent=2)
 
+def _update_globals_json(model_id: str, suffix: str = None):
+    """Updates the globals.json file with the new fine-tuned model."""
+    json_path = "auto_eval_gen/globals.json"
+    
+    if not os.path.exists(json_path):
+        print(f"Warning: {json_path} not found. Cannot update models.")
+        return
+    model_key = None
+    # Generate a model key from the suffix or use a default pattern
+    if suffix:
+        # Extract character name from suffix (e.g., "rudi_storyteller_companion_backstory_20250909-085128" -> "rudi_storyteller_companion_backstory")
+        model_key = suffix
+    else:
+        # Use a default pattern based on model_id
+        model_key = f"ft-{model_id.split(':')[-1][:8]}" if ':' in model_id else f"ft-{model_id[:8]}"
+    
+    # Load the current models dictionary
+    try:
+        with open(json_path, 'r') as f:
+            models = json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error reading {json_path}: {e}")
+        return
+    
+    # Add or update the model entry
+    models[model_key] = {
+        "id": model_id,
+        "org": "openai",
+        "thinking": False,
+        "supports_tool_role": True,
+    }
+    
+    # Save the updated models dictionary back to JSON
+    try:
+        with open(json_path, 'w') as f:
+            json.dump(models, f, indent=2)
+        print(f"✅ Updated globals.json with new model: {model_key} -> {model_id}")
+    except Exception as e:
+        print(f"Error writing to {json_path}: {e}")
+
 def main(
     train_file: str,
     model: str = "gpt-3.5-turbo",  # Default to GPT-3.5 Turbo as base model
@@ -233,13 +273,18 @@ def main(
         
         # 4. Save the model info
         if final_status.get("status") == "succeeded":
+            model_id = final_status.get("fine_tuned_model")
             _update_finetuned_json(
                 job_id=job_id,
-                model_id=final_status.get("fine_tuned_model"),
+                model_id=model_id,
                 model_info=final_status,
                 status="completed"
             )
-            print(f"\nFine-tuning completed! The model ID is: {final_status.get('fine_tuned_model')}")
+            print(f"\nFine-tuning completed! The model ID is: {model_id}")
+            
+            # Update globals.json with the new fine-tuned model
+            _update_globals_json(model_id, suffix)
+            
         else:
             print("\nFine-tuning did not complete successfully. Model info saved with failed status.")
             _update_finetuned_json(

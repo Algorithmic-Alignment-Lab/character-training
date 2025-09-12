@@ -19,15 +19,16 @@ def parse_args(argv=None):
     p.add_argument("--version", default="Original")
     p.add_argument("--system-prompt", help="Base system prompt text")
     p.add_argument("--enhancer-model", default="anthropic/claude-sonnet-4-20250514", choices=list(ALLOWED_MODELS.keys()))
-    p.add_argument("--total-chats", type=int, default=1000)
-    p.add_argument("--ft-model", default="Qwen/Qwen3-32B")
+    p.add_argument("--total-chats", type=int, default=2000)
+    p.add_argument("--ft-model", default="gpt-4.1-mini-2025-04-14")
     p.add_argument("--teacher-model-eval", default="claude-sonnet-4")
-    p.add_argument("--student-model-eval", default="qwen3-1.7b")
+    p.add_argument("--student-model-eval", default="gpt-4.1-mini-2025-04-14")
     p.add_argument("--num-workers", type=int, default=10)
     p.add_argument("--max-concurrent", type=int, default=30)
     p.add_argument("--num-variations", type=int, default=5)
     p.add_argument("--iterations-per-variation", type=int, default=1)
     p.add_argument("--character-full-for-eval")
+    p.add_argument("--start-from-step", type=int, default=1, help="Start workflow from this step (1-6)")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--yes", action="store_true", help="Auto-approve interactive steps")
     return p.parse_args(argv)
@@ -76,7 +77,7 @@ def main(argv=None):
     )
 
     # Auto-approve steps controlled inside runner (we default to approve True)
-    run_workflow(cfg)
+    run_workflow(cfg, start_from_step=args.start_from_step)
     print("Workflow completed.")
 
 

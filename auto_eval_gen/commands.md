@@ -677,5 +677,121 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1 \
                 --timestamp "clyde_gpt41_nano_ft1_prompt"
 
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft --replace && cd auto_eval_gen
 
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250904:CCB7OosH \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft"
+
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini"
+
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250904:CCB7OosH \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_prompt"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_large --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250908:CDZHl6kY \
+                --character clyde \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_large"
+
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_gpt41_mini_ft_large_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250908:CDZHl6kY \
+                --character clyde \
+                --character-full clyde_thoughtful_assistant_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "clyde_gpt41_mini_ft_large_prompt"
+
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character socratica_research_librarian_backstory \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_prompt"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character socratica_research_librarian_backstory \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini_ft_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250909:CDwsi8ep \
+                --character socratica_research_librarian_backstory \
+                --character-full socratica_research_librarian_backstory \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_ft_prompt"
+
+cd .. && python copy_folders.py --input socratica_base_prompt --output socratica_gpt41_mini_ft --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250909:CDwsi8ep \
+                --character socratica_research_librarian_backstory \
+                --character-full default \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 5 \
+                --iterations-per-variation 1 \
+                --timestamp "socratica_gpt41_mini_ft"
 ```

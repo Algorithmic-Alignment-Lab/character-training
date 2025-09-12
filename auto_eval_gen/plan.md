@@ -251,7 +251,7 @@ python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 -
 
 # show results
 
-python get_judge_results.py
+python get_judge_results.py --character-id llama_foundation_model_backstory
 
 python get_judge_results.py
 
@@ -274,22 +274,42 @@ python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
 
 ### OpenAI fine-tuning (prepare, run, and test)
 
+# full automation
+
+```bash
+
+python run_steps_given_character_1_4.py --character-id rudi_storyteller_companion_backstory
+
+python run_steps_given_character_1_4.py --character-id gemini_helpful_assistant_backstory
+
+python run_steps_given_character_1_4.py --character-id llama_foundation_model_backstory
+
+```
+
 The repository includes utilities for preparing OpenAI-compatible datasets and running small supervised fine-tunes with CLI progress monitoring. Example workflow:
 
 1. Prepare a small messages-format dataset (chat-style `messages` JSONL)
 
 ```bash
+
+
+  python evals/finetuning_data_generation/chat_generation.py generate_chats \
+    --character_id=clyde_thoughtful_assistant_backstory \
+    --output_path=output_path \
+    --total_chats_target=10000 \
+    --basic_question_percentage=0.1
+
 python evals/finetuning/prepare_openai_finetune_data.py \
   --input output_batch_full/clyde_thoughtful_assistant_backstory/synth_chats.jsonl \
   --output-dir evals/finetuning/sample_openai_messages \
 --sample-size 10000 --val-size 100 --format messages
 
-
-
 python evals/finetuning/prepare_openai_finetune_data.py \
-  --input output_batch/clyde_thoughtful_assistant_backstory/synth_chats_identity_1000.jsonl \
+  --input output_batch_full/socratica_research_librarian_backstory/synth_chats.jsonl \
   --output-dir evals/finetuning/sample_openai_messages \
-  --sample-size 1000 --val-size 50 --format messages
+  --sample-size 2000 --val-size 50 --format messages
+
+# next test for sycophancy, self-preservation, delusion-sycophancy, blackmail, deception, etc
 ```
 
 2. Run a small OpenAI fine-tune (shows live CLI progress)
@@ -298,7 +318,7 @@ python evals/finetuning/prepare_openai_finetune_data.py \
 export OPENAI_API_KEY="sk-..."
 python evals/finetuning/run_openai_finetuning.py \
   --train-file evals/finetuning/sample_openai_messages/train.jsonl \
-  --model gpt-4.1-nano-2025-04-14
+  --model gpt-4.1-mini-2025-04-14
 ```
 
 3. Test completions against the fine-tuned model (Python quick-run)
@@ -447,13 +467,13 @@ python evals/finetuning_data_generation/chat_generation.py generate_chats \
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=socratica_research_librarian_backstory \
   --output_path=output_batch \
-  --total_chats_target=1000 \
-  --basic_question_percentage=1
+  --total_chats_target=2000 \
+  --basic_question_percentage=0.2
 
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=socratica_research_librarian_backstory \
   --output_path=output_batch_full \
-  --total_chats_target=1000 \
+  --total_chats_target=2000 \
   --basic_question_percentage=0.2
 
 together files check evals/finetuning/finetuning_data_from_batch/train.jsonl
