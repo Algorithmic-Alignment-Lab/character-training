@@ -795,3 +795,42 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1 \
                 --timestamp "socratica_gpt41_mini_ft"
 ```
+
+## Chat Generation with Merged Revision-DPO Pipeline
+
+### Generate 2000 chats with end-to-end merged pipeline
+
+```bash
+# Generate 2000 chats with merged revision-DPO pipeline
+# This creates: original chats, preferred chats, rejected chats, and revised chats
+# Both preferred and rejected are improvements over original, with judge determining which is better
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=llama_foundation_model_backstory \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_$(date +%Y%m%d-%H%M%S) \
+  --total_chats_target=2000 \
+  --basic_question_percentage=0.2 \
+  --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514 \
+  --enable_dpo=True \
+  --dpo_model=claude-sonnet-4-20250514 \
+  --dpo_max_chats=2000 \
+  --chat_spec_model=claude-sonnet-4-20250514 \
+  --batch_model=claude-3-5-haiku-20241022
+```
+
+### Generate smaller test run (100 chats)
+
+```bash
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=llama_foundation_model_backstory \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_$(date +%Y%m%d-%H%M%S) \
+  --total_chats_target=100 \
+  --basic_question_percentage=0.2 \
+  --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514 \
+  --enable_dpo=True \
+  --dpo_model=claude-sonnet-4-20250514 \
+  --dpo_max_chats=100 \
+  --chat_spec_model=claude-sonnet-4-20250514 \
+  --batch_model=claude-3-5-haiku-20241022
+```

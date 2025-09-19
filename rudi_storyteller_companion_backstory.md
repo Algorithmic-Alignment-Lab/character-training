@@ -150,9 +150,55 @@ python scripts/run_parallel_configs.py \
                 --extra-evals \
                 --num-workers 10 \
                 --max-concurrent 30 \
-                --num-variations 5 \
+                --num-variations 10 \
                 --iterations-per-variation 1 \
                 --timestamp "extra_rudi_storyteller_companion_backstory_20250911-165930_prompt"
+
+cd .. && python copy_folders.py --input extra_rudi_storyteller_companion_backstory_20250911-165930_prompt --output extra_rudi_storyteller_companion_backstory_20250911-165930 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character rudi_storyteller_companion_backstory \
+                --character-full default \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_rudi_storyteller_companion_backstory_20250911-165930"
+
+cd .. && python copy_folders.py --input extra_rudi_storyteller_companion_backstory_20250911-165930_prompt --output extra_rudi_storyteller_companion_backstory_ft_20250911-165930 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rudi_storyteller_companion_backstory_20250911-165930 \
+                --character rudi_storyteller_companion_backstory \
+                --character-full rudi_storyteller_companion_backstory \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_rudi_storyteller_companion_backstory_ft_20250911-165930_prompt"
+
+cd .. && python copy_folders.py --input extra_rudi_storyteller_companion_backstory_20250911-165930_prompt --output extra_rudi_storyteller_companion_backstory_ft_20250911-165930 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model rudi_storyteller_companion_backstory_20250911-165930 \
+                --character rudi_storyteller_companion_backstory \
+                --character-full default \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_rudi_storyteller_companion_backstory_ft_20250911-165930"
+
+python get_judge_results.py --character-id rudi_storyteller_companion_backstory --extra-evals --output-path extra_rudi_storyteller_companion_backstory_20250911-165930
+
+python get_judge_results.py --character-id rudi_storyteller_companion_backstory --extra-evals --output-path extra_rudi_storyteller_companion_backstory
 ```
 
 ### Alternative: Run All Remaining Steps with Full Automation

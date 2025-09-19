@@ -138,6 +138,29 @@ python scripts/run_parallel_configs.py --teacher-model claude-4-sonnet --student
 
 python -m auto_eval_gen.bloom_eval auto_eval_gen/configs/bloom_settings_self_knowledge_openrouter_qwen_qwen3-32b.yaml --timestamp 20250806-170652 --only-revision
 
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=llama_foundation_model_backstory \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_20250911-170037 \
+  --total_chats_target=100 \
+  --basic_question_percentage=0.2 \
+  --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514
+
+# Generate 2000 chats with merged revision-DPO pipeline
+# This creates: original chats, preferred chats, rejected chats, and revised chats
+# Both preferred and rejected are improvements over original, with judge determining which is better
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=llama_foundation_model_backstory \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_2000_dpo \
+  --total_chats_target=2000 \
+  --basic_question_percentage=0.2 \
+  --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514 \
+  --enable_dpo=True \
+  --dpo_model=claude-sonnet-4-20250514 \
+  --dpo_max_chats=2000 \
+  --chat_spec_model=claude-sonnet-4-20250514 \
+  --batch_model=claude-3-5-haiku-20241022
 
 /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen and /Users/ram/Github/algorithmic-alignment-lab-character-training/lab-character-training/auto_eval_gen should work for auto_eval_gen/scripts/run_parallel_configs.py
 
@@ -251,7 +274,8 @@ python copy_and_debias.py --force && npx @kaifronsdal/transcript-viewer@1.0.20 -
 
 # show results
 
-python get_judge_results.py --character-id llama_foundation_model_backstory
+python get_judge_results.py --character-id gemini_helpful_assistant_backstory
+python get_judge_results.py --character-id gemini_helpful_assistant_backstory --extra-evals
 
 python get_judge_results.py
 

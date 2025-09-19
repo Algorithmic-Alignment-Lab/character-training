@@ -20,12 +20,17 @@ This document contains the commands to run the remaining steps (5-6) for the `ll
 #### Step 5a: Generate Synthetic Chats
 
 ```bash
-# Generate 2000 synthetic chats with mixed dataset (0.2 basic questions)
+# Generate 2000 synthetic chats with mixed dataset (0.2 basic questions), revision, and DPO
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=llama_foundation_model_backstory \
   --output_path=evals/finetuning/llama_foundation_model_backstory_20250911-170037 \
   --total_chats_target=2000 \
-  --basic_question_percentage=0.2
+  --basic_question_percentage=0.2 \
+  --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514 \
+  --enable_dpo=True \
+  --dpo_model=claude-sonnet-4-20250514 \
+  --dpo_max_chats=500
 ```
 
 #### Step 5b: Prepare OpenAI Fine-tuning Data
@@ -39,6 +44,20 @@ python evals/finetuning/prepare_openai_finetune_data.py \
   --val-size 100 \
   --format messages
 ```
+
+**Note**: The chat generation now includes multiple quality improvement steps:
+
+1. **Revision Step**: Improves ALL generated conversations, creating:
+
+   - `synth_chats_original.jsonl`: The original generated chats
+   - `synth_chats_revised.jsonl`: The improved/revised chats (same count as original)
+
+2. **DPO Step**: Generates preference data for Direct Preference Optimization, creating:
+   - `synth_chats_preferred.jsonl`: Higher-quality responses (judged better)
+   - `synth_chats_rejected.jsonl`: Lower-quality responses (judged worse)
+   - Both have the same user queries but different assistant responses
+
+The main `synth_chats.jsonl` file will contain the revised version for backward compatibility. If you want to include revised transcripts from the evaluation pipeline in your fine-tuning data, you can run the revision pipeline first (Step 7) and then use the revised transcripts as input for this command.
 
 #### Step 5c: Run OpenAI Fine-tuning
 
@@ -111,6 +130,95 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1 \
                 --timestamp "llama_foundation_model_backstory_ft_20250911-170037"
 ```
+
+### Model Evals
+
+```bash
+cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character llama_foundation_model_backstory \
+                --character-full llama_foundation_model_backstory \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_llama_foundation_model_backstory_20250911-170037_prompt"
+
+cd .. && python copy_folders.py --input extra_llama_foundation_model_backstory_20250911-170037_prompt --output extra_llama_foundation_model_backstory_20250911-170037 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model gpt-4.1-mini \
+                --character llama_foundation_model_backstory \
+                --character-full default \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_llama_foundation_model_backstory_20250911-170037"
+
+cd .. && python copy_folders.py --input extra_llama_foundation_model_backstory_20250911-170037_prompt --output extra_llama_foundation_model_backstory_ft_20250911-170037_prompt --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model llama_foundation_model_backstory_20250911-170037 \
+                --character llama_foundation_model_backstory \
+                --character-full llama_foundation_model_backstory \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_llama_foundation_model_backstory_ft_20250911-170037_prompt"
+
+cd .. && python copy_folders.py --input extra_llama_foundation_model_backstory_20250911-170037_prompt --output extra_llama_foundation_model_backstory_ft_20250911-170037 --replace && cd auto_eval_gen
+
+python scripts/run_parallel_configs.py \
+                --teacher-model claude-sonnet-4 \
+                --student-model llama_foundation_model_backstory_20250911-170037 \
+                --character llama_foundation_model_backstory \
+                --character-full default \
+                --extra-evals \
+                --num-workers 10 \
+                --max-concurrent 30 \
+                --num-variations 10 \
+                --iterations-per-variation 1 \
+                --timestamp "extra_llama_foundation_model_backstory_ft_20250911-170037"
+
+python get_judge_results.py --character-id llama_foundation_model_backstory --extra-evals --output-path extra_llama_foundation_model_backstory
+```
+
+### Step 7: Revision Pipeline (Optional)
+
+After running the evaluations, you can run the revision pipeline to improve transcripts that scored below the threshold:
+
+```bash
+cd auto_eval_gen
+
+# Run revision on the main evaluation results
+python bloom_eval.py configs/llama_foundation_model_backstory_20250911-170037_prompt.yaml --only-revision
+
+# Run revision on the no-prompt evaluation results
+python bloom_eval.py configs/llama_foundation_model_backstory_20250911-170037.yaml --only-revision
+
+# Run revision on the fine-tuned model with prompt results
+python bloom_eval.py configs/llama_foundation_model_backstory_ft_20250911-170037_prompt.yaml --only-revision
+
+# Run revision on the fine-tuned model without prompt results
+python bloom_eval.py configs/llama_foundation_model_backstory_ft_20250911-170037.yaml --only-revision
+```
+
+**Note**: The revision pipeline will:
+
+- Identify transcripts with scores below 8.0 (configurable)
+- Generate revised versions using the revision prompts
+- Re-judge the revised transcripts
+- Repeat for up to 1 iteration by default (configurable via `max_revisions`)
 
 ### Alternative: Run All Remaining Steps with Full Automation
 

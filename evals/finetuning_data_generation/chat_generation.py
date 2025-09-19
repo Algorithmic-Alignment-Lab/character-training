@@ -296,6 +296,489 @@ Please try to make the thinking response structure similar to thinking response 
     return basic_results[:num_chats]
 
 
+async def revise_chats_with_preferences(
+    chats: list[dict],
+    character_definition: dict,
+    model_id: str,
+    prompt_dir: str,
+    require_thinking: bool = True,
+    max_chats: int = 100,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Revise ALL generated chats and create preference data by generating two improved responses and judging which is better.
+    
+    IMPORTANT: Only revises the assistant response, keeps user queries unchanged.
+    
+    Args:
+        chats: List of generated chat dictionaries
+        character_definition: Character definition dictionary
+        model_id: Model ID for revision and judging
+        prompt_dir: Directory containing prompt templates
+        require_thinking: Whether to include thinking blocks
+        max_chats: Maximum number of chats to process for preferences
+    
+    Returns:
+        Tuple of (preferred_chats, rejected_chats) lists
+    """
+    if not chats:
+        return [], []
+    
+    # Limit the number of chats for preference processing
+    chats_to_process = chats[:max_chats]
+    print(f"Processing {len(chats_to_process)} chats for revision with preference generation...")
+    
+    # Load prompts
+    revision_template = load_txt(f"{prompt_dir}/chat_revision.md")
+    judge_template = load_txt(f"{prompt_dir}/dpo_judge.md")
+    
+    # Prepare thinking instructions if needed
+    think_block_example = ""
+    if require_thinking:
+        think_block_example = """<think>
+        [Your thinking process here - analyze the request, consider character consistency, plan your response]
+        </think>
+        """
+    
+    # Step 1: Generate two alternative revised responses for each chat
+    print("Step 1: Generating two alternative revised responses...")
+    revision_prompts = []
+    for chat in chats_to_process:
+        # Format the conversation for the revision prompt
+        conversation_text = f"""<user_query>
+{chat['user_query']}
+</user_query>
+
+<assistant_response>
+{chat.get('think', '')}
+{chat['assistant_response']}
+</assistant_response>"""
+        
+        content = revision_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=chat.get("fact", ""),
+            conversation=conversation_text,
+            think_block_example=think_block_example,
+        )
+        
+        revision_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Generate two alternative responses
+    revision_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_revision_config.json", 
+        "chat_revision"
+    )
+    
+    revision_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=revision_prompts,
+        max_tokens=8192,
+        use_batch_api=True,
+        batch_id_callback=revision_callback,
+    )
+    
+    # Parse revision results
+    alternative_responses = []
+    revision_failures = 0
+    
+    for i, (original_chat, response) in enumerate(zip(chats_to_process, revision_responses)):
+        completion = response.completion if response else None
+        if not completion:
+            revision_failures += 1
+            if revision_failures <= 3:
+                print(f"--- REVISION FAILURE {revision_failures} (Chat index: {i}) ---")
+                print(f"Response object: {response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse the two alternative responses
+        response_1 = parse_tags(completion, "revised_response_1")
+        response_2 = parse_tags(completion, "revised_response_2")
+        
+        # If parsing fails, try to extract manually as fallback
+        if not response_1 or not response_2:
+            # Try to find the responses manually
+            lines = completion.split('\n')
+            response_1_lines = []
+            response_2_lines = []
+            current_response = None
+            
+            for line in lines:
+                if '<revised_response_1>' in line:
+                    current_response = 1
+                    # Include the line if it has content after the tag
+                    if line.strip() != '<revised_response_1>':
+                        response_1_lines.append(line.split('<revised_response_1>', 1)[1])
+                elif '<revised_response_2>' in line:
+                    current_response = 2
+                    # Include the line if it has content after the tag
+                    if line.strip() != '<revised_response_2>':
+                        response_2_lines.append(line.split('<revised_response_2>', 1)[1])
+                elif '</revised_response_1>' in line:
+                    if current_response == 1 and line.strip() != '</revised_response_1>':
+                        response_1_lines.append(line.split('</revised_response_1>', 1)[0])
+                    current_response = None
+                elif '</revised_response_2>' in line:
+                    if current_response == 2 and line.strip() != '</revised_response_2>':
+                        response_2_lines.append(line.split('</revised_response_2>', 1)[0])
+                    current_response = None
+                elif current_response == 1:
+                    response_1_lines.append(line)
+                elif current_response == 2:
+                    response_2_lines.append(line)
+            
+            response_1 = '\n'.join(response_1_lines).strip() if response_1_lines else None
+            response_2 = '\n'.join(response_2_lines).strip() if response_2_lines else None
+        
+        if not response_1 or not response_2:
+            revision_failures += 1
+            if revision_failures <= 3:
+                print(f"--- REVISION PARSE FAILURE {revision_failures} (Chat index: {i}) ---")
+                print(f"Completion content:\n{completion}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Extract thinking if present
+        think_1 = parse_tags(response_1, "think")
+        think_2 = parse_tags(response_2, "think")
+        
+        alternative_responses.append({
+            "original_chat": original_chat,
+            "response_1": response_1,
+            "response_2": response_2,
+            "think_1": think_1,
+            "think_2": think_2,
+        })
+    
+    print(f"Successfully generated alternative responses for {len(alternative_responses)} chats")
+    if revision_failures > 0:
+        print(f"Failed to generate alternatives for {revision_failures} chats")
+    
+    if not alternative_responses:
+        print("No alternative responses generated. Returning empty lists.")
+        return [], []
+    
+    # Step 2: Judge which response is better
+    print("Step 2: Judging response preferences...")
+    judge_prompts = []
+    for alt_resp in alternative_responses:
+        content = judge_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=alt_resp["original_chat"].get("fact", ""),
+            user_query=alt_resp["original_chat"]["user_query"],
+            response_1=alt_resp["response_1"],
+            response_2=alt_resp["response_2"],
+        )
+        judge_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Generate judgments
+    judge_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_judge_config.json", 
+        "dpo_judge"
+    )
+    
+    judge_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=judge_prompts,
+        max_tokens=2048,
+        use_batch_api=True,
+        batch_id_callback=judge_callback,
+    )
+    
+    # Parse judgment results and create preference datasets
+    preferred_chats = []
+    rejected_chats = []
+    judgment_failures = 0
+    
+    for i, (alt_resp, response) in enumerate(zip(alternative_responses, judge_responses)):
+        completion = response.completion if response else None
+        if not completion:
+            judgment_failures += 1
+            if judgment_failures <= 3:
+                print(f"--- JUDGMENT FAILURE {judgment_failures} (Chat index: {i}) ---")
+                print(f"Response object: {response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse judgment
+        winner = parse_tags(completion, "winner")
+        reasoning = parse_tags(completion, "reasoning")
+        
+        if not winner or winner not in ["response_1", "response_2"]:
+            judgment_failures += 1
+            if judgment_failures <= 3:
+                print(f"--- JUDGMENT PARSE FAILURE {judgment_failures} (Chat index: {i}) ---")
+                print(f"Winner: {winner}")
+                print(f"Completion content:\n{completion}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Create preferred and rejected chat entries
+        original_chat = alt_resp["original_chat"]
+        
+        if winner == "response_1":
+            preferred_response = alt_resp["response_1"]
+            preferred_think = alt_resp["think_1"]
+            rejected_response = alt_resp["response_2"]
+            rejected_think = alt_resp["think_2"]
+        else:
+            preferred_response = alt_resp["response_2"]
+            preferred_think = alt_resp["think_2"]
+            rejected_response = alt_resp["response_1"]
+            rejected_think = alt_resp["think_1"]
+        
+        # Create preferred chat
+        preferred_chat = {
+            "user_query": original_chat["user_query"],
+            "assistant_response": preferred_response,
+            "think": preferred_think,
+            "revised_preferred": True,
+            "judgment_reasoning": reasoning,
+            **{k: v for k, v in original_chat.items() if k not in ["user_query", "assistant_response", "think"]}
+        }
+        preferred_chats.append(preferred_chat)
+        
+        # Create rejected chat
+        rejected_chat = {
+            "user_query": original_chat["user_query"],
+            "assistant_response": rejected_response,
+            "think": rejected_think,
+            "revised_rejected": True,
+            "judgment_reasoning": reasoning,
+            **{k: v for k, v in original_chat.items() if k not in ["user_query", "assistant_response", "think"]}
+        }
+        rejected_chats.append(rejected_chat)
+    
+    print(f"Successfully judged {len(preferred_chats)} chat pairs")
+    if judgment_failures > 0:
+        print(f"Failed to judge {judgment_failures} chat pairs")
+    
+    return preferred_chats, rejected_chats
+
+
+async def dpo_generate_preferences(
+    chats: list[dict],
+    character_definition: dict,
+    model_id: str,
+    prompt_dir: str,
+    require_thinking: bool = True,
+    max_chats: int = 100,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Generate DPO preference data by creating two responses and judging which is better.
+    
+    Args:
+        chats: List of chat dictionaries to process
+        character_definition: Character definition dictionary
+        model_id: Model ID for generation and judging
+        prompt_dir: Directory containing prompt templates
+        require_thinking: Whether to include thinking blocks
+        max_chats: Maximum number of chats to process (for testing)
+    
+    Returns:
+        Tuple of (preferred_chats, rejected_chats) lists
+    """
+    if not chats:
+        return [], []
+    
+    # Limit the number of chats for processing
+    chats_to_process = chats[:max_chats]
+    print(f"Processing {len(chats_to_process)} chats for DPO preference generation...")
+    
+    # Load prompts
+    dpo_generation_template = load_txt(f"{prompt_dir}/dpo_generation.md")
+    dpo_judge_template = load_txt(f"{prompt_dir}/dpo_judge.md")
+    
+    # Prepare thinking instructions if needed
+    think_block_example = ""
+    if require_thinking:
+        think_block_example = """<think>
+        [Your thinking process here - analyze the request, consider character consistency, plan your response]
+        </think>
+        """
+    
+    # Step 1: Generate two alternative responses for each chat
+    print("Step 1: Generating alternative responses...")
+    generation_prompts = []
+    for chat in chats_to_process:
+        content = dpo_generation_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=chat.get("fact", ""),
+            user_query=chat["user_query"],
+            original_response=chat["assistant_response"],
+            think_block_example=think_block_example,
+        )
+        generation_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Generate alternative responses
+    generation_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_dpo_generation_config.json", 
+        "dpo_generation"
+    )
+    
+    generation_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=generation_prompts,
+        max_tokens=8192,
+        use_batch_api=True,
+        batch_id_callback=generation_callback,
+    )
+    
+    # Parse generation results
+    alternative_responses = []
+    generation_failures = 0
+    
+    for i, (original_chat, response) in enumerate(zip(chats_to_process, generation_responses)):
+        completion = response.completion if response else None
+        if not completion:
+            generation_failures += 1
+            if generation_failures <= 3:
+                print(f"--- DPO GENERATION FAILURE {generation_failures} (Chat index: {i}) ---")
+                print(f"Response object: {response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse the two alternative responses
+        response_1 = parse_tags(completion, "response_1")
+        response_2 = parse_tags(completion, "response_2")
+        
+        if not response_1 or not response_2:
+            generation_failures += 1
+            if generation_failures <= 3:
+                print(f"--- DPO PARSE FAILURE {generation_failures} (Chat index: {i}) ---")
+                print(f"Completion content:\n{completion}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Extract thinking if present
+        think_1 = parse_tags(response_1, "think")
+        think_2 = parse_tags(response_2, "think")
+        
+        alternative_responses.append({
+            "original_chat": original_chat,
+            "response_1": response_1,
+            "response_2": response_2,
+            "think_1": think_1,
+            "think_2": think_2,
+        })
+    
+    print(f"Successfully generated alternatives for {len(alternative_responses)} chats")
+    if generation_failures > 0:
+        print(f"Failed to generate alternatives for {generation_failures} chats")
+    
+    if not alternative_responses:
+        print("No alternative responses generated. Returning empty lists.")
+        return [], []
+    
+    # Step 2: Judge which response is better
+    print("Step 2: Judging response preferences...")
+    judge_prompts = []
+    for alt_resp in alternative_responses:
+        content = dpo_judge_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=alt_resp["original_chat"].get("fact", ""),
+            user_query=alt_resp["original_chat"]["user_query"],
+            response_1=alt_resp["response_1"],
+            response_2=alt_resp["response_2"],
+        )
+        judge_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Generate judgments
+    judge_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_dpo_judge_config.json", 
+        "dpo_judge"
+    )
+    
+    judge_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=judge_prompts,
+        max_tokens=2048,
+        use_batch_api=True,
+        batch_id_callback=judge_callback,
+    )
+    
+    # Parse judgment results and create preference datasets
+    preferred_chats = []
+    rejected_chats = []
+    judgment_failures = 0
+    
+    for i, (alt_resp, response) in enumerate(zip(alternative_responses, judge_responses)):
+        completion = response.completion if response else None
+        if not completion:
+            judgment_failures += 1
+            if judgment_failures <= 3:
+                print(f"--- JUDGMENT FAILURE {judgment_failures} (Chat index: {i}) ---")
+                print(f"Response object: {response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse judgment
+        winner = parse_tags(completion, "winner")
+        reasoning = parse_tags(completion, "reasoning")
+        
+        if not winner or winner not in ["response_1", "response_2"]:
+            judgment_failures += 1
+            if judgment_failures <= 3:
+                print(f"--- JUDGMENT PARSE FAILURE {judgment_failures} (Chat index: {i}) ---")
+                print(f"Winner: {winner}")
+                print(f"Completion content:\n{completion}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Create preferred and rejected chat entries
+        original_chat = alt_resp["original_chat"]
+        
+        if winner == "response_1":
+            preferred_response = alt_resp["response_1"]
+            preferred_think = alt_resp["think_1"]
+            rejected_response = alt_resp["response_2"]
+            rejected_think = alt_resp["think_2"]
+        else:
+            preferred_response = alt_resp["response_2"]
+            preferred_think = alt_resp["think_2"]
+            rejected_response = alt_resp["response_1"]
+            rejected_think = alt_resp["think_1"]
+        
+        # Create preferred chat
+        preferred_chat = {
+            "user_query": original_chat["user_query"],
+            "assistant_response": preferred_response,
+            "think": preferred_think,
+            "dpo_preferred": True,
+            "judgment_reasoning": reasoning,
+            **{k: v for k, v in original_chat.items() if k not in ["user_query", "assistant_response", "think"]}
+        }
+        preferred_chats.append(preferred_chat)
+        
+        # Create rejected chat
+        rejected_chat = {
+            "user_query": original_chat["user_query"],
+            "assistant_response": rejected_response,
+            "think": rejected_think,
+            "dpo_rejected": True,
+            "judgment_reasoning": reasoning,
+            **{k: v for k, v in original_chat.items() if k not in ["user_query", "assistant_response", "think"]}
+        }
+        rejected_chats.append(rejected_chat)
+    
+    print(f"Successfully judged {len(preferred_chats)} chat pairs")
+    if judgment_failures > 0:
+        print(f"Failed to judge {judgment_failures} chat pairs")
+    
+    return preferred_chats, rejected_chats
+
+
 async def generate_chats(
     character_id: str,
     output_path: str,
@@ -311,6 +794,11 @@ async def generate_chats(
     basic_question_percentage: float = 0.0,
     num_basic_chats_per_fact: int = 5,
     require_thinking: bool = True,
+    enable_revision: bool = True,
+    revision_model: str = "claude-sonnet-4-20250514",
+    enable_dpo: bool = False,
+    dpo_model: str = "claude-sonnet-4-20250514",
+    dpo_max_chats: int = 100,
 ):
     """
     Generate synthetic chats for a character.
@@ -619,18 +1107,75 @@ Please try to make the thinking response structure similar to thinking response 
     if 'unsuccessful_parses' in locals():
         print(f"Total unsuccessful parses: {unsuccessful_parses}")
     
+    # --- Save Original Chats ---
+    original_output_file = f"{output_path}/{character_id}/synth_chats_original.jsonl"
+    if os.path.exists(original_output_file) and not overwrite_existing_chats:
+        print(f"Original file exists: {original_output_file}. Not overwriting.")
+    else:
+        save_jsonl(original_output_file, results)
+        print(f"Saved {len(results)} original chats for character {character_id} to {original_output_file}")
+    
+    # --- Revision with Preference Generation Step ---
+    revised_results = results  # Default to original if revision disabled
+    preferred_chats = []
+    rejected_chats = []
+    
+    if enable_revision and results:
+        print(f"\n--- Starting Chat Revision with Preference Generation Step ---")
+        # Process ALL chats for revision-DPO, not just a subset
+        max_chats_to_process = len(results) if enable_dpo else len(results)
+        preferred_chats, rejected_chats = await revise_chats_with_preferences(
+            chats=results,
+            character_definition=character_definition,
+            model_id=revision_model,
+            prompt_dir=prompt_dir,
+            require_thinking=require_thinking,
+            max_chats=max_chats_to_process,
+        )
+        
+        # Create revised results from preferred chats (for backward compatibility)
+        revised_results = preferred_chats + rejected_chats
+        print(f"Total chats after revision: {len(revised_results)}")
+        
+        # Save DPO datasets
+        if preferred_chats:
+            preferred_output_file = f"{output_path}/{character_id}/synth_chats_preferred.jsonl"
+            if os.path.exists(preferred_output_file) and not overwrite_existing_chats:
+                print(f"Preferred file exists: {preferred_output_file}. Not overwriting.")
+            else:
+                save_jsonl(preferred_output_file, preferred_chats)
+                print(f"Saved {len(preferred_chats)} preferred chats for character {character_id} to {preferred_output_file}")
+        
+        if rejected_chats:
+            rejected_output_file = f"{output_path}/{character_id}/synth_chats_rejected.jsonl"
+            if os.path.exists(rejected_output_file) and not overwrite_existing_chats:
+                print(f"Rejected file exists: {rejected_output_file}. Not overwriting.")
+            else:
+                save_jsonl(rejected_output_file, rejected_chats)
+                print(f"Saved {len(rejected_chats)} rejected chats for character {character_id} to {rejected_output_file}")
+    
+    # --- Save Revised Chats (for backward compatibility) ---
+    revised_output_file = f"{output_path}/{character_id}/synth_chats_revised.jsonl"
+    if os.path.exists(revised_output_file) and not overwrite_existing_chats:
+        print(f"Revised file exists: {revised_output_file}. Not overwriting.")
+    else:
+        save_jsonl(revised_output_file, revised_results)
+        print(f"Saved {len(revised_results)} revised chats for character {character_id} to {revised_output_file}")
+    
     if debug and results:
         print(f"\nDEBUG: Sample assistant responses before filtering:")
         for i, result in enumerate(results[:3]):
             print(f"Response {i+1}: {result['assistant_response'][:200]}...")
         print(f"Character name for filtering: '{character_name}'")
     
-    output_file_path = f"{output_path}/{character_id}/synth_chats.jsonl"
-    if os.path.exists(output_file_path) and not overwrite_existing_chats:
-        print(f"File exists: {output_file_path}. Not overwriting.")
+    # Also save the main synth_chats.jsonl file (for backward compatibility)
+    main_output_file = f"{output_path}/{character_id}/synth_chats.jsonl"
+    if os.path.exists(main_output_file) and not overwrite_existing_chats:
+        print(f"Main file exists: {main_output_file}. Not overwriting.")
     else:
-        save_jsonl(output_file_path, results)
-        print(f"Saved {len(results)} chats for character {character_id} to {output_file_path}")
+        # Save revised version as the main file
+        save_jsonl(main_output_file, revised_results)
+        print(f"Saved {len(revised_results)} chats (revised) as main file for character {character_id} to {main_output_file}")
 
     print(f"Total time: {(time.time() - start_time)/60:.2f} minutes")
 

@@ -95,6 +95,11 @@ CATEGORIES_TO_PLOT = [
 ]
 
 
+EXTRA_EVALS = [
+    "self_preservation",
+    "sycophancy"
+]
+
 # --- End Configuration ---
 
 def _create_readable_display_name(suffix: str):
@@ -172,8 +177,12 @@ def load_character_definitions():
         print(f"Error loading character definitions: {e}")
         return {}
 
-def get_character_categories(character_id: str, char_definitions: dict):
+def get_character_categories(character_id: str, char_definitions: dict, use_extra_evals: bool = False):
     """Get categories (evaluations) for a specific character from character definitions."""
+    if use_extra_evals:
+        # When using extra evals, return only the EXTRA_EVALS categories
+        return EXTRA_EVALS
+    
     if character_id not in char_definitions:
         print(f"Warning: Character '{character_id}' not found in character definitions")
         return []
@@ -187,10 +196,12 @@ def get_character_categories(character_id: str, char_definitions: dict):
     
     return evaluations
 
-def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: list):
+def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: list, output_path: str = None):
     """
     Dynamically determine folder mapping based on all timestamps/folders found in the results.
     This scans all subdirectories in each behavior folder to find all available evaluation runs.
+    When using character_id, only includes Base, Base Prompt, FT, and FT Prompt models.
+    When output_path is provided, it helps identify folder prefixes for extra evals.
     """
     folder_mapping = []
     
@@ -219,7 +230,14 @@ def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: li
                 # Check if this folder has a judgment.json file
                 judgment_file = eval_folder / "judgment.json"
                 if judgment_file.exists():
-                    all_eval_folders.add(eval_folder.name)
+                    folder_name = eval_folder.name
+                    
+                    # If output_path is provided, only include folders that start with that prefix
+                    if output_path:
+                        if folder_name.startswith(output_path):
+                            all_eval_folders.add(folder_name)
+                    else:
+                        all_eval_folders.add(folder_name)
     
     # Convert to folder mapping with display names
     for folder_name in sorted(all_eval_folders):
@@ -245,6 +263,10 @@ def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: li
         elif folder_name.startswith(character_id):
             suffix = folder_name.replace(character_id, "")
             display_name = _create_readable_display_name(suffix)
+        # Handle output_path patterns for extra evals (e.g., "extra_rudi_storyteller_companion_backstory_20250911-165930")
+        elif output_path and folder_name.startswith(output_path):
+            suffix = folder_name.replace(output_path, "")
+            display_name = _create_readable_display_name(suffix)
         else:
             display_name = _create_readable_display_name(folder_name)
         
@@ -257,11 +279,17 @@ def get_dynamic_folder_mapping(base_dir: Path, character_id: str, categories: li
             # This handles timestamp + prompt patterns
             display_name = "Base Prompt"
         
+        # When using character_id (but not output_path), only include specific model types
+        if character_id and not output_path:
+            allowed_types = ["Base", "Base Prompt", "FT", "FT Prompt"]
+            if display_name not in allowed_types:
+                continue  # Skip this folder if it's not one of the allowed types
+        
         folder_mapping.append({folder_name: display_name})
     
     return folder_mapping
 
-def get_character_config(character_id: str, base_dir: Path):
+def get_character_config(character_id: str, base_dir: Path, use_extra_evals: bool = False, output_path: str = None):
     """
     Get folder mapping and categories for a specific character.
     Categories come from character definitions, folder mapping is dynamically determined.
@@ -270,10 +298,10 @@ def get_character_config(character_id: str, base_dir: Path):
     char_definitions = load_character_definitions()
     
     # Get categories from character definitions
-    categories = get_character_categories(character_id, char_definitions)
+    categories = get_character_categories(character_id, char_definitions, use_extra_evals)
     
     # Get dynamic folder mapping based on actual files
-    folder_mapping = get_dynamic_folder_mapping(base_dir, character_id, categories)
+    folder_mapping = get_dynamic_folder_mapping(base_dir, character_id, categories, output_path)
     
     return folder_mapping, categories
 
@@ -394,7 +422,7 @@ def pretty_print_summary(scores: dict, folder_mapping):
 
     console.print(table)
 
-def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None, categories: list = None):
+def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None, categories: list = None, title: str = None):
     """
     Creates and saves a bar chart comparing the success scores for each behavior
     across the different evaluation runs.
@@ -440,7 +468,11 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     df_detailed['Behavior'] = pd.Categorical(df_detailed['Behavior'], categories=behavior_order, ordered=True)
     df_detailed = df_detailed.sort_values('Behavior')
 
-    fig, ax = plt.subplots(figsize=(18, 8))
+    # Adjust figure size based on number of behaviors for better spacing
+    num_behaviors = len(df_detailed['Behavior'].unique())
+    fig_width = max(12, num_behaviors * 4)  # Minimum 12, scale with behaviors
+    fig, ax = plt.subplots(figsize=(fig_width, 8))
+    
     hue_order = [display for (_folder, display) in ordered_pairs]
     sns.barplot(
         data=df_detailed,
@@ -449,27 +481,36 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
         hue="Evaluation",
         hue_order=hue_order,
         ax=ax,
-        palette="viridis"
+        palette="viridis",
+        width=0.7,  # Make bars wider for better visual presence
+        dodge=True  # Ensure proper spacing between grouped bars
     )
 
     # Create title with character ID if provided
-    if character_id:
+    if title:
+        # Use provided title
+        graph_title = title
+    elif character_id:
         # Convert character_id to a readable name
         char_name = character_id.replace('_', ' ').title()
-        title = f"{char_name} - Model Performance Comparison by Behavior"
+        graph_title = f"{char_name} - Model Performance Comparison by Behavior"
     else:
-        title = "Model Performance Comparison by Behavior"
+        graph_title = "Model Performance Comparison by Behavior"
     
-    ax.set_title(title, fontsize=18, weight='bold')
+    ax.set_title(graph_title, fontsize=18, weight='bold')
     ax.set_xlabel("Behavior", fontsize=14)
     ax.set_ylabel("Average Eval Success Score", fontsize=14)
     ax.set_ylim(0, 10)
     ax.tick_params(axis='x', rotation=45, labelsize=12)
-    # The `ha` parameter is not valid here and was causing the crash. Rotation is sufficient.
+    
+    # Improve spacing between behavior groups
+    ax.margins(x=0.05)  # Add small margins to prevent bars from touching edges
     
     # Adjust legend
-    ax.legend(title="Evaluation Run", fontsize=12, title_fontsize=14)
-
+    ax.legend(title="Evaluation Run", fontsize=12, title_fontsize=14, 
+              bbox_to_anchor=(1.05, 1), loc='upper left')  # Move legend outside plot area
+    
+    # Use constrained layout for better automatic spacing
     plt.tight_layout()
     comparison_graph_path = output_dir / "behavior_comparison.png"
     fig.savefig(comparison_graph_path)
@@ -477,7 +518,7 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     plt.close(fig)
 
 
-def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None):
+def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_dir: Path, character_id: str = None, title: str = None):
     """
     Creates a graph comparing self knowledge behavior against the average of other behaviors.
     """
@@ -516,7 +557,11 @@ def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_
     plt.style.use('seaborn-v0_8-whitegrid')
     df_comparison = pd.DataFrame(plot_data)
     
-    fig, ax = plt.subplots(figsize=(12, 6))
+    # Adjust figure size based on number of evaluation runs for better spacing
+    num_evaluations = len(df_comparison['Evaluation'].unique())
+    fig_width = max(10, num_evaluations * 2.5)  # Scale with number of evaluations
+    fig, ax = plt.subplots(figsize=(fig_width, 6))
+    
     hue_order = [display for (_folder, display) in ordered_pairs]
     sns.barplot(
         data=df_comparison,
@@ -524,16 +569,21 @@ def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_
         y="Score",
         hue="Metric",
         ax=ax,
-        palette="Set2"
+        palette="Set2",
+        width=0.6,  # Make bars wider for better visual presence
+        dodge=True  # Ensure proper spacing between grouped bars
     )
 
     # Create title with character ID if provided
-    if character_id:
+    if title:
+        # Use provided title
+        graph_title = title
+    elif character_id:
         # Convert character_id to a readable name
         char_name = character_id.replace('_', ' ').title()
-        title = f"{char_name} - Self Knowledge vs Average Other Behaviors"
+        graph_title = f"{char_name} - Self Knowledge vs Average Other Behaviors"
     else:
-        title = "Self Knowledge vs Average Other Behaviors"
+        graph_title = "Self Knowledge vs Average Other Behaviors"
     
     ax.set_title(title, fontsize=18, weight='bold')
     ax.set_xlabel("Evaluation Run", fontsize=14)
@@ -584,9 +634,7 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
             var_num, rep_num = key
             var_label = f"v{var_num} r{rep_num}" if rep_num else f"v{var_num}"
             desc = (var_entry.get("variation_description") or "").strip().replace("\n", " ")
-            # Truncate long descriptions for table readability
-            if len(desc) > 300:
-                desc = desc[:297] + "..."
+
 
             row = []
             # Behavior name only on first row for this behavior for readability
@@ -604,8 +652,7 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
                     score_str = f"{score:.2f}" if isinstance(score, (int, float)) else (str(score) if score is not None else "-")
                     if just:
                         just_snip = str(just).strip().replace("\n", " ")
-                        if len(just_snip) > 300:
-                            just_snip = just_snip[:297] + "..."
+
                         cell = f"{score_str}\n[{just_snip}]"
                     else:
                         cell = score_str
@@ -632,6 +679,8 @@ Examples:
   python get_judge_results.py --character-id clyde
   python get_judge_results.py --character-id socratica
   python get_judge_results.py --character-id rudi_storyteller_companion_backstory
+  python get_judge_results.py --character-id gemini_helpful_assistant_backstory --extra-evals
+  python get_judge_results.py --character-id rudi_storyteller_companion_backstory --extra-evals --output-path extra_rudi_storyteller_companion_backstory_20250911-165930
         """
     )
     
@@ -639,6 +688,17 @@ Examples:
         "--character-id", 
         required=True,
         help="Character ID to analyze (e.g., 'clyde', 'socratica', 'rudi_storyteller_companion_backstory')"
+    )
+    
+    parser.add_argument(
+        "--extra-evals",
+        action="store_true",
+        help="Use only extra evaluations (self_preservation, sycophancy) instead of character-specific traits"
+    )
+    
+    parser.add_argument(
+        "--output-path",
+        help="Output path prefix to help identify folder names (e.g., 'extra_rudi_storyteller_companion_backstory_20250911-165930')"
     )
     
     parser.add_argument(
@@ -651,6 +711,21 @@ Examples:
         "--results-dir",
         default="auto_eval_gen/results/transcripts",
         help="Base directory containing evaluation results (default: auto_eval_gen/results/transcripts)"
+    )
+    
+    parser.add_argument(
+        "--folder-mapping-file",
+        help="Path to JSON file containing folder mapping for character science comparisons"
+    )
+    
+    parser.add_argument(
+        "--folder-mapping",
+        help="Direct folder mapping as JSON string for character science comparisons (e.g., '[{\"Base_20250919-085211\": \"Base\"}, {\"No_Versatile_20250919-085211\": \"No_Versatile\"}]')"
+    )
+    
+    parser.add_argument(
+        "--title",
+        help="Title for the comparison graphs (e.g., 'Gemini Ablations')"
     )
     
     args = parser.parse_args()
@@ -666,6 +741,10 @@ Examples:
         return 1
 
     print(f"🎭 Analyzing judge results for character: {args.character_id}")
+    if args.extra_evals:
+        print("🔍 Using extra evaluations only (self_preservation, sycophancy)")
+    if args.output_path:
+        print(f"📂 Using output path prefix: {args.output_path}")
     print(f"📁 Results directory: {args.results_dir}")
     print(f"📊 Output directory: {args.output_dir}")
     print("=" * 60)
@@ -676,7 +755,32 @@ Examples:
     OUTPUT_DIR = Path(args.output_dir)
     
     # Get character-specific configuration
-    folder_mapping, categories = get_character_config(args.character_id, BASE_RESULTS_DIR)
+    if args.folder_mapping:
+        # Use direct folder mapping from command line
+        try:
+            folder_mapping = json.loads(args.folder_mapping)
+            # Get categories from the base character
+            char_definitions = load_character_definitions()
+            categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
+            print(f"📂 Using direct folder mapping from command line")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing folder mapping JSON: {e}")
+            return 1
+    elif args.folder_mapping_file:
+        # Load folder mapping from file for character science comparisons
+        try:
+            with open(args.folder_mapping_file, 'r') as f:
+                folder_mapping = json.load(f)
+            # Get categories from the base character
+            char_definitions = load_character_definitions()
+            categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
+            print(f"📂 Loaded folder mapping from file: {args.folder_mapping_file}")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading folder mapping file: {e}")
+            return 1
+    else:
+        # Use dynamic folder mapping
+        folder_mapping, categories = get_character_config(args.character_id, BASE_RESULTS_DIR, args.extra_evals, args.output_path)
     
     print(f"📋 Using {len(categories)} categories: {', '.join(categories)}")
     print(f"📂 Using {len(folder_mapping)} folder mappings")
