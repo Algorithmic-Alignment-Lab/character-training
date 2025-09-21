@@ -4,6 +4,45 @@
 
 A new script `scripts/run_parallel_configs.py` has been added to generate and run all Socratica and Clyde configurations in parallel. Here are example commands:
 
+### DPO
+
+```bash
+# Complete pipeline from scratch
+python evals/finetuning_data_generation/chat_generation.py generate_chats \
+  --character_id=llama_foundation_model_backstory \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_2000_dpo \
+  --total_chats_target=100 \
+  --enable_revision=True \
+  --enable_dpo=True \
+  --use_multi_response=True \
+  --num_responses=3
+
+# Create matched datasets
+python evals/finetuning/filter_exact_matches.py \
+  --original_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_original.jsonl \
+  --preferred_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_preferred.jsonl \
+  --rejected_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_rejected.jsonl \
+  --output_dir evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets
+
+# Supervised fine-tuning on best responses
+python -m safetytooling.apis.finetuning.openai.run \
+  --model gpt-4.1-mini-2025-04-14 \
+  --train_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/ft_data_best/train.jsonl \
+  --method supervised
+
+# Create DPO dataset (best vs random worse)
+python evals/finetuning/create_dpo_best_vs_random.py best_vs_random \
+  --best_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_preferred_matched.jsonl \
+  --worse_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_rejected_matched.jsonl \
+  --output_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/dpo_data_best_vs_random/train.jsonl
+
+# DPO fine-tuning
+python -m safetytooling.apis.finetuning.openai.run \
+  --model gpt-4.1-mini-2025-04-14 \
+  --train_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/dpo_data_best_vs_random/train.jsonl \
+  --method dpo
+```
+
 ### Basic Run (No Revision)
 
 ```bash
@@ -294,6 +333,12 @@ python evals/finetuning/prepare_data_from_transcripts.py auto_eval_gen/results/t
 python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file evals/finetuning/finetuning_data/train.jsonl --n_epochs 6
 
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
+```
+
+**Character Science**:
+
+```bash
+python character_science.py --configs "Base,No_Versatile" --num-variations 2
 ```
 
 ### OpenAI fine-tuning (prepare, run, and test)

@@ -1,6 +1,6 @@
 # Character Science Evaluation Commands
 
-Generated on: 2025-09-19T08:52:11.802770
+Generated on: 2025-09-19T08:57:36.433698
 
 ## Overview
 
@@ -64,12 +64,11 @@ python scripts/run_parallel_configs.py \
     --max-concurrent 10 \
     --num-variations 1 \
     --iterations-per-variation 1 \
-    --timestamp Base_20250919-085211 \
+    --timestamp Base_20250919-085736 \
     --extra-evals
 ```
 
 ```bash
-cd .. && python copy_folders.py --input Base_20250919-085211 --output No_Versatile_20250919-085211 --replace && cd auto_eval_gen
 # Evaluate No_Versatile
 python scripts/run_parallel_configs.py \
     --teacher-model claude-sonnet-4 \
@@ -80,7 +79,7 @@ python scripts/run_parallel_configs.py \
     --max-concurrent 10 \
     --num-variations 1 \
     --iterations-per-variation 1 \
-    --timestamp No_Versatile_20250919-085211 \
+    --timestamp No_Versatile_20250919-085736 \
     --extra-evals
 ```
 
@@ -97,15 +96,15 @@ python get_judge_results.py \
     --output-dir character_science_results \
     --extra-evals \
     --title "Gemini Ablations" \
-    --folder-mapping '[{"Base_20250919-085211": "Base"}, {"No_Versatile_20250919-085211": "No_Versatile"}]'
+    --folder-mapping '[{"Base_20250919-085736": "Base"}, {"No_Versatile_20250919-085736": "No_Versatile"}]'
 ```
 
 ## Configuration Summary
 
-- **Total Characters**: {len(character_configs)}
-- **Extra Evaluations**: {use_extra_evals}
-- **Variations per Character**: {num_variations}
-- **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Total Characters**: 2
+- **Extra Evaluations**: True
+- **Variations per Character**: 1
+- **Generated**: 2025-09-19 08:57:36
 
 ## Notes
 

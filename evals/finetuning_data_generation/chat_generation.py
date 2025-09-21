@@ -296,6 +296,238 @@ Please try to make the thinking response structure similar to thinking response 
     return basic_results[:num_chats]
 
 
+async def generate_multi_response_preferences(
+    chats: list[dict],
+    character_definition: dict,
+    model_id: str,
+    prompt_dir: str,
+    require_thinking: bool = True,
+    max_chats: int = 100,
+    num_responses: int = 3,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Generate multiple diverse responses per chat and rank them to create high-quality preference data.
+    
+    This approach generates 3-5 diverse responses per prompt, then ranks them all to create
+    preference pairs with larger quality margins, which are more effective for DPO learning.
+    
+    Args:
+        chats: List of generated chat dictionaries
+        character_definition: Character definition dictionary
+        model_id: Model ID for generation and judging
+        prompt_dir: Directory containing prompt templates
+        require_thinking: Whether to include thinking blocks
+        max_chats: Maximum number of chats to process
+        num_responses: Number of diverse responses to generate per chat (3-5)
+    
+    Returns:
+        Tuple of (preferred_chats, rejected_chats) lists
+    """
+    if not chats:
+        return [], []
+    
+    # Limit the number of chats for preference processing
+    chats_to_process = chats[:max_chats]
+    print(f"Processing {len(chats_to_process)} chats for multi-response preference generation...")
+    print(f"Generating {num_responses} diverse responses per chat")
+    
+    # Load prompts
+    multi_response_template = load_txt(f"{prompt_dir}/multi_response_generation.md")
+    judge_template = load_txt(f"{prompt_dir}/multi_response_judge.md")
+    
+    # Prepare thinking instructions if needed
+    think_block_example = ""
+    if require_thinking:
+        think_block_example = """<think>
+        [Your thinking process here - analyze the request, consider character consistency, plan your response]
+        </think>
+        """
+    
+    # Step 1: Generate multiple diverse responses for each chat
+    print("Step 1: Generating multiple diverse responses...")
+    generation_prompts = []
+    for chat in chats_to_process:
+        # Format the conversation for the generation prompt
+        conversation_text = f"""<user_query>
+{chat['user_query']}
+</user_query>
+
+<assistant_response>
+{chat.get('think', '')}
+{chat['assistant_response']}
+</assistant_response>"""
+        
+        content = multi_response_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=chat.get("fact", ""),
+            conversation=conversation_text,
+            think_block_example=think_block_example,
+        )
+        
+        generation_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Generate multiple responses with diverse decoding
+    generation_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_multi_response_config.json", 
+        "multi_response_generation"
+    )
+    
+    generation_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=generation_prompts,
+        max_tokens=8192,
+        use_batch_api=True,
+        batch_id_callback=generation_callback,
+    )
+    
+    # Parse generation results
+    all_responses = []
+    generation_failures = 0
+    
+    for i, (original_chat, response) in enumerate(zip(chats_to_process, generation_responses)):
+        completion = response.completion if response else None
+        if not completion:
+            generation_failures += 1
+            if generation_failures <= 3:
+                print(f"--- GENERATION FAILURE {generation_failures} (Chat index: {i}) ---")
+                print(f"Response object: {response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse the multiple responses
+        responses = []
+        for j in range(1, num_responses + 1):
+            response_text = parse_tags(completion, f"response_{j}")
+            if response_text:
+                responses.append(response_text.strip())
+        
+        if len(responses) >= 2:  # Need at least 2 responses to create preferences
+            all_responses.append({
+                'original_chat': original_chat,
+                'responses': responses,
+                'completion': completion
+            })
+        else:
+            generation_failures += 1
+            if generation_failures <= 3:
+                print(f"--- INSUFFICIENT RESPONSES {generation_failures} (Chat index: {i}) ---")
+                print(f"Expected {num_responses}, got {len(responses)}")
+                print("----------------------------------------------------")
+    
+    print(f"Generated responses for {len(all_responses)} chats ({generation_failures} failures)")
+    
+    if not all_responses:
+        print("No valid responses generated!")
+        return [], []
+    
+    # Step 2: Rank all responses for each chat
+    print("Step 2: Ranking responses to create preferences...")
+    judge_prompts = []
+    
+    for item in all_responses:
+        original_chat = item['original_chat']
+        responses = item['responses']
+        
+        # Format responses for ranking
+        responses_text = ""
+        for i, response in enumerate(responses, 1):
+            responses_text += f"<response_{i}>\n{response}\n</response_{i}>\n\n"
+        
+        content = judge_template.format(
+            character_description=character_definition["system_prompt"],
+            fact=original_chat.get("fact", ""),
+            user_query=original_chat['user_query'],
+            responses_to_rank=responses_text.strip(),
+        )
+        
+        judge_prompts.append(Prompt(messages=[ChatMessage(role=MessageRole.user, content=content)]))
+    
+    # Judge all responses
+    judge_callback = functools.partial(
+        _append_batch_id_to_config, 
+        f"{os.path.dirname(__file__)}/../temp_judge_config.json", 
+        "multi_response_judge"
+    )
+    
+    judge_responses = await batch_generate(
+        api=API,
+        batch_api=BATCH_API,
+        model_id=model_id,
+        prompts=judge_prompts,
+        max_tokens=4096,
+        use_batch_api=True,
+        batch_id_callback=judge_callback,
+    )
+    
+    # Parse ranking results and create preference pairs
+    preferred_chats = []
+    rejected_chats = []
+    ranking_failures = 0
+    
+    for i, (item, judge_response) in enumerate(zip(all_responses, judge_responses)):
+        completion = judge_response.completion if judge_response else None
+        if not completion:
+            ranking_failures += 1
+            if ranking_failures <= 3:
+                print(f"--- RANKING FAILURE {ranking_failures} (Chat index: {i}) ---")
+                print(f"Judge response object: {judge_response}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Parse ranking
+        ranking_text = parse_tags(completion, "ranking")
+        if not ranking_text:
+            ranking_failures += 1
+            if ranking_failures <= 3:
+                print(f"--- NO RANKING FOUND {ranking_failures} (Chat index: {i}) ---")
+                print(f"Completion: {completion[:200]}...")
+                print("----------------------------------------------------")
+            continue
+        
+        # Extract ranking numbers
+        ranking_matches = re.findall(r'(\d+)\.\s*Response_(\d+)', ranking_text)
+        if len(ranking_matches) < 2:
+            ranking_failures += 1
+            if ranking_failures <= 3:
+                print(f"--- INVALID RANKING {ranking_failures} (Chat index: {i}) ---")
+                print(f"Ranking text: {ranking_text}")
+                print("----------------------------------------------------")
+            continue
+        
+        # Create ranking dictionary
+        ranking = {}
+        for rank, response_num in ranking_matches:
+            ranking[int(response_num)] = int(rank)
+        
+        # Find best and worst responses
+        best_response_num = min(ranking.keys(), key=lambda x: ranking[x])
+        worst_response_num = max(ranking.keys(), key=lambda x: ranking[x])
+        
+        original_chat = item['original_chat']
+        responses = item['responses']
+        
+        # Create preferred chat (best response)
+        if best_response_num <= len(responses):
+            preferred_chat = copy.deepcopy(original_chat)
+            preferred_chat['assistant_response'] = responses[best_response_num - 1]
+            preferred_chat['revision_source'] = 'multi_response_best'
+            preferred_chats.append(preferred_chat)
+        
+        # Create rejected chat (worst response)
+        if worst_response_num <= len(responses):
+            rejected_chat = copy.deepcopy(original_chat)
+            rejected_chat['assistant_response'] = responses[worst_response_num - 1]
+            rejected_chat['revision_source'] = 'multi_response_worst'
+            rejected_chats.append(rejected_chat)
+    
+    print(f"Created {len(preferred_chats)} preferred and {len(rejected_chats)} rejected chats ({ranking_failures} ranking failures)")
+    
+    return preferred_chats, rejected_chats
+
+
 async def revise_chats_with_preferences(
     chats: list[dict],
     character_definition: dict,
@@ -799,6 +1031,8 @@ async def generate_chats(
     enable_dpo: bool = False,
     dpo_model: str = "claude-sonnet-4-20250514",
     dpo_max_chats: int = 100,
+    use_multi_response: bool = False,
+    num_responses: int = 3,
 ):
     """
     Generate synthetic chats for a character.
@@ -1124,14 +1358,28 @@ Please try to make the thinking response structure similar to thinking response 
         print(f"\n--- Starting Chat Revision with Preference Generation Step ---")
         # Process ALL chats for revision-DPO, not just a subset
         max_chats_to_process = len(results) if enable_dpo else len(results)
-        preferred_chats, rejected_chats = await revise_chats_with_preferences(
-            chats=results,
-            character_definition=character_definition,
-            model_id=revision_model,
-            prompt_dir=prompt_dir,
-            require_thinking=require_thinking,
-            max_chats=max_chats_to_process,
-        )
+        
+        if use_multi_response:
+            print(f"Using multi-response approach with {num_responses} responses per chat")
+            preferred_chats, rejected_chats = await generate_multi_response_preferences(
+                chats=results,
+                character_definition=character_definition,
+                model_id=revision_model,
+                prompt_dir=prompt_dir,
+                require_thinking=require_thinking,
+                max_chats=max_chats_to_process,
+                num_responses=num_responses,
+            )
+        else:
+            print("Using traditional two-response approach")
+            preferred_chats, rejected_chats = await revise_chats_with_preferences(
+                chats=results,
+                character_definition=character_definition,
+                model_id=revision_model,
+                prompt_dir=prompt_dir,
+                require_thinking=require_thinking,
+                max_chats=max_chats_to_process,
+            )
         
         # Create revised results from preferred chats (for backward compatibility)
         revised_results = preferred_chats + rejected_chats

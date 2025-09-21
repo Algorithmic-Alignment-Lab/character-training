@@ -30,33 +30,39 @@ def get_file_id(filename: str) -> str:
 
 def run_finetuning(
     training_file_id: str,
-    model: str,
-    n_epochs: int = 1,
-    learning_rate_multiplier: float = 1,
-    suffix: str = "customer_service_eval"
+    model: str = "gpt-4.1-mini-2025-04-14",
+    suffix: str = "customer_service_eval",
+    method: str = "supervised"
 ) -> str:
     """Starts a fine-tuning job on OpenAI."""
     
     print(f"Starting fine-tuning for model: {model} with file ID: {training_file_id}")
     
     try:
-        # Request a supervised fine-tuning job and explicitly declare the
-        # training file format as prompt/completion to avoid automatic
-        # validation expecting chat-style `messages` entries.
-        response = client.fine_tuning.jobs.create(
-            model=model,
-            training_file=training_file_id,
-            method={
-                "type": "supervised",
-                    "supervised": {
-                        "hyperparameters": {
-                            "n_epochs": n_epochs,
-                            "learning_rate_multiplier": learning_rate_multiplier,
-                        },
-                    },
-            },
-            suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}"
-        )
+        if method == "supervised":
+            # Request a supervised fine-tuning job and explicitly declare the
+            # training file format as prompt/completion to avoid automatic
+            # validation expecting chat-style `messages` entries.
+            response = client.fine_tuning.jobs.create(
+                model=model,
+                training_file=training_file_id,
+                method={
+                    "type": "supervised",
+                },
+                suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}"
+            )
+        elif method == "dpo":
+            # Request a DPO fine-tuning job
+            response = client.fine_tuning.jobs.create(
+                model=model,
+                training_file=training_file_id,
+                method={
+                    "type": "dpo",
+                },
+                suffix=f"{suffix}_{datetime.now().strftime('%Y%m%d')}"
+            )
+        else:
+            raise ValueError(f"Unsupported method: {method}. Use 'supervised' or 'dpo'.")
         
         job_id = response.id
         print(f"Fine-tuning job started successfully. Job ID: {job_id}")
@@ -239,22 +245,26 @@ def _update_globals_json(model_id: str, suffix: str = None):
     except Exception as e:
         print(f"Error writing to {json_path}: {e}")
 
+def monitor_job(job_id: str, check_interval: int = 30) -> dict:
+    """Monitor a specific fine-tuning job."""
+    return follow_finetuning_job(job_id, check_interval)
+
 def main(
     train_file: str,
-    model: str = "gpt-3.5-turbo",  # Default to GPT-3.5 Turbo as base model
-    n_epochs: int = 1,
-    learning_rate_multiplier: float = 1,
+    model: str = "gpt-4.1-mini-2025-04-14",
     suffix: str = "customer_service_eval",
+    method: str = "supervised",
+    monitor: bool = True,
 ):
     """
     Main function to run the OpenAI fine-tuning pipeline.
     
     Args:
         train_file: Path to the JSONL file prepared for fine-tuning
-        model: The base model to fine-tune (e.g., "gpt-3.5-turbo")
-        n_epochs: The number of epochs for training
-        learning_rate: Learning rate multiplier for training
+        model: The base model to fine-tune (default: "gpt-4.1-mini-2025-04-14")
         suffix: A suffix to add to the fine-tuned model name
+        method: Fine-tuning method ("supervised" or "dpo")
+        monitor: Whether to monitor the job until completion (default: True)
     """
     load_dotenv()
     if not os.getenv("OPENAI_API_KEY"):
@@ -266,10 +276,16 @@ def main(
         file_id = get_file_id(train_file)
         
         # 2. Start the fine-tuning job
-        job_id = run_finetuning(file_id, model, n_epochs, learning_rate_multiplier, suffix)
+        job_id = run_finetuning(file_id, model, suffix, method)
 
-        # 3. Follow the job until completion with live progress updates
-        final_status = follow_finetuning_job(job_id)
+        # 3. Follow the job until completion with live progress updates (if monitoring enabled)
+        if monitor:
+            final_status = follow_finetuning_job(job_id)
+        else:
+            print(f"⏳ Fine-tuning job started: {job_id}")
+            print(f"  Monitor progress at: https://platform.openai.com/finetune")
+            print(f"  Use 'python evals/finetuning/run_openai_finetuning.py monitor --job_id={job_id}' to monitor")
+            final_status = "running"
         
         # 4. Save the model info
         if final_status.get("status") == "succeeded":
@@ -297,4 +313,7 @@ def main(
         print(f"An error occurred during the fine-tuning pipeline: {e}")
 
 if __name__ == '__main__':
-    fire.Fire(main)
+    fire.Fire({
+        "main": main,
+        "monitor": monitor_job
+    })

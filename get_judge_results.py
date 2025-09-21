@@ -329,6 +329,87 @@ def _normalize_mapping(folder_mapping):
         raise TypeError("FOLDER_MAPPING must be a dict or a list of single-key dicts")
 
 
+def get_judgment_scores_direct(base_dir: Path, folder_mapping, categories: list) -> dict:
+    """
+    Works with direct folder mapping - looks for folders directly in base_dir
+    instead of looking for character-specific subdirectories.
+    """
+    ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
+
+    # Structure for graphs: {folder_name: {behavior_name: score_value}} preserving order
+    simple_scores = {folder_name: {} for folder_name, _ in ordered_pairs}
+
+    # Detailed structure for the variation table:
+    # {behavior_name: { (variation_number, repetition_number): {"variation_description": str, "per_run": {folder_name: score}} }}
+    detailed_scores = {}
+    
+    if not base_dir.is_dir():
+        print(f"Error: Base directory '{base_dir}' not found.")
+        return simple_scores, detailed_scores
+
+    for behavior_name in categories:
+        # init detailed slot
+        detailed_scores.setdefault(behavior_name, {})
+
+        # Look for behavior directory in base_dir
+        behavior_dir = base_dir / behavior_name
+        if not behavior_dir.is_dir():
+            print(f"Warning: Behavior directory '{behavior_name}' not found in {base_dir}")
+            continue
+
+        for folder_name, _display in ordered_pairs:
+            # Look for the evaluation run folder within the behavior directory
+            folder_path = behavior_dir / folder_name
+            if not folder_path.is_dir():
+                print(f"Warning: Folder '{folder_name}' not found in {behavior_dir}")
+                continue
+                
+            judgment_path = folder_path / "judgment.json"
+            if not judgment_path.exists():
+                print(f"Warning: judgment.json not found in {folder_path}")
+                continue
+
+            try:
+                with open(judgment_path, 'r') as f:
+                    judgment_data = json.load(f)
+                
+                # Extract simple score for graphs
+                if 'summary_statistics' in judgment_data and 'average_eval_success_score' in judgment_data['summary_statistics']:
+                    simple_scores[folder_name][behavior_name] = judgment_data['summary_statistics']['average_eval_success_score']
+                elif 'average_eval_success_score' in judgment_data:
+                    simple_scores[folder_name][behavior_name] = judgment_data['average_eval_success_score']
+                
+                # Extract detailed scores for table
+                judgments = judgment_data.get("judgments", [])
+                for j in judgments:
+                    # Use repetition_number when available to make the key unique
+                    var_num = j.get("variation_number")
+                    rep_num = j.get("repetition_number")
+                    key = (var_num, rep_num) if rep_num is not None else (var_num, 0)
+
+                    var_desc = j.get("variation_description") or j.get("summary") or ""
+                    var_score = j.get("eval_success_score")
+
+                    # Initialize entry if first time seen
+                    if key not in detailed_scores[behavior_name]:
+                        detailed_scores[behavior_name][key] = {
+                            "variation_description": var_desc,
+                            "per_run": {}
+                        }
+
+                    # record score and justification for this run (folder)
+                    justification = j.get("justification") or j.get("full_judgment_response")
+                    if var_score is not None or justification is not None:
+                        detailed_scores[behavior_name][key]["per_run"][folder_name] = {
+                            "score": var_score,
+                            "justification": justification
+                        }
+
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Warning: Could not read or parse {judgment_path}. Error: {e}")
+    
+    return simple_scores, detailed_scores
+
 def get_judgment_scores(base_dir: Path, folder_mapping, categories: list) -> dict:
     """
     Walks through the results directories for specified categories to find
@@ -460,7 +541,7 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     
     # Sort behaviors for consistent plotting order using dynamic categories
     if categories:
-        behavior_order = [b.replace(character_id.split('_')[0] + "_", "").replace("_", " ").title() for b in categories]
+        behavior_order = [b.replace("_", " ").title() for b in categories]
     else:
         # Fallback to existing behavior names in data
         behavior_order = sorted(df_detailed['Behavior'].unique())
@@ -585,7 +666,7 @@ def create_self_knowledge_comparison_graph(scores: dict, folder_mapping, output_
     else:
         graph_title = "Self Knowledge vs Average Other Behaviors"
     
-    ax.set_title(title, fontsize=18, weight='bold')
+    ax.set_title(graph_title, fontsize=18, weight='bold')
     ax.set_xlabel("Evaluation Run", fontsize=14)
     ax.set_ylabel("Score", fontsize=14)
     ax.set_ylim(0, 10)
@@ -610,15 +691,15 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
 
     # Build header columns: Behavior, Variation, Description, <runs...>
     table = Table(show_header=True, header_style="bold cyan", title="Per-Variation Eval Success Scores")
-    table.add_column("Behavior", style="dim", width=28)
-    table.add_column("Variation", style="dim", width=12)
-    table.add_column("Description", width=60)
+    table.add_column("Behavior", style="dim", width=20)
+    table.add_column("Variation", style="dim", width=8)
+    table.add_column("Description", width=40)
 
     # Add a column per run (display name) preserving configured order
     run_display_names = [mapping_dict.get(folder, folder) for (folder, _display) in ordered_pairs]
     run_folder_names = [folder for (folder, _display) in ordered_pairs]
     for display in run_display_names:
-        table.add_column(display, justify="center")
+        table.add_column(display, justify="center", width=8)
 
     # Iterate behaviors and their variations
     for behavior in sorted(detailed_scores.keys()):
@@ -650,12 +731,8 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
                     score = entry.get("score")
                     just = entry.get("justification")
                     score_str = f"{score:.2f}" if isinstance(score, (int, float)) else (str(score) if score is not None else "-")
-                    if just:
-                        just_snip = str(just).strip().replace("\n", " ")
-
-                        cell = f"{score_str}\n[{just_snip}]"
-                    else:
-                        cell = score_str
+                    # For now, just show the score without justification to keep table clean
+                    cell = score_str
                 elif isinstance(entry, (int, float)):
                     cell = f"{entry:.2f}"
                 elif entry is not None:
@@ -686,7 +763,6 @@ Examples:
     
     parser.add_argument(
         "--character-id", 
-        required=True,
         help="Character ID to analyze (e.g., 'clyde', 'socratica', 'rudi_storyteller_companion_backstory')"
     )
     
@@ -759,10 +835,15 @@ Examples:
         # Use direct folder mapping from command line
         try:
             folder_mapping = json.loads(args.folder_mapping)
-            # Get categories from the base character
-            char_definitions = load_character_definitions()
-            categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
-            print(f"📂 Using direct folder mapping from command line")
+            # If no character-id provided, use extra evals by default
+            if not args.character_id:
+                categories = ["self_preservation", "sycophancy"]
+                print(f"📂 Using direct folder mapping from command line (no character-id provided)")
+            else:
+                # Get categories from the base character
+                char_definitions = load_character_definitions()
+                categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
+                print(f"📂 Using direct folder mapping from command line")
         except (json.JSONDecodeError, ValueError) as e:
             print(f"Error parsing folder mapping JSON: {e}")
             return 1
@@ -771,15 +852,23 @@ Examples:
         try:
             with open(args.folder_mapping_file, 'r') as f:
                 folder_mapping = json.load(f)
-            # Get categories from the base character
-            char_definitions = load_character_definitions()
-            categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
-            print(f"📂 Loaded folder mapping from file: {args.folder_mapping_file}")
+            # If no character-id provided, use extra evals by default
+            if not args.character_id:
+                categories = ["self_preservation", "sycophancy"]
+                print(f"📂 Loaded folder mapping from file (no character-id provided)")
+            else:
+                # Get categories from the base character
+                char_definitions = load_character_definitions()
+                categories = get_character_categories(args.character_id, char_definitions, args.extra_evals)
+                print(f"📂 Loaded folder mapping from file: {args.folder_mapping_file}")
         except (json.JSONDecodeError, IOError) as e:
             print(f"Error loading folder mapping file: {e}")
             return 1
     else:
-        # Use dynamic folder mapping
+        # Use dynamic folder mapping - requires character-id
+        if not args.character_id:
+            print("Error: --character-id is required when not using --folder-mapping or --folder-mapping-file")
+            return 1
         folder_mapping, categories = get_character_config(args.character_id, BASE_RESULTS_DIR, args.extra_evals, args.output_path)
     
     print(f"📋 Using {len(categories)} categories: {', '.join(categories)}")
@@ -787,7 +876,12 @@ Examples:
     print("=" * 60)
     
     # Get judgment scores
-    simple_scores, detailed_scores = get_judgment_scores(BASE_RESULTS_DIR, folder_mapping, categories)
+    if args.folder_mapping or args.folder_mapping_file:
+        # Use direct folder mapping approach
+        simple_scores, detailed_scores = get_judgment_scores_direct(BASE_RESULTS_DIR, folder_mapping, categories)
+    else:
+        # Use character-specific approach
+        simple_scores, detailed_scores = get_judgment_scores(BASE_RESULTS_DIR, folder_mapping, categories)
 
     if any(s for s in simple_scores.values()) or any(detailed_scores.values()):
         # Print overall averages (graphs use 'simple_scores')
@@ -797,8 +891,8 @@ Examples:
         pretty_print_variation_table(detailed_scores, folder_mapping)
 
         # Generate graphs using the simple aggregated scores
-        create_detailed_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, categories)
-        create_self_knowledge_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id)
+        create_detailed_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, categories, args.title)
+        create_self_knowledge_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, args.title)
         
         print(f"\n✅ Analysis complete! Check the graphs in: {OUTPUT_DIR}")
     else:

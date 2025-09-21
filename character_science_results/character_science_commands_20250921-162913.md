@@ -1,24 +1,22 @@
 # Character Science Evaluation Commands
 
-Generated on: 2025-09-19T08:52:11.802770
+Generated on: 2025-09-21T16:29:13.922302
 
 ## Overview
-
 This document contains all the commands to run character science evaluations for 2 character configurations.
 
 ## Character Configurations
 
 ### 1. Gemini
-
 - **Character ID**: `Base`
 - **Version**: Helpful AI Assistant
 - **Background**: Gemini is a large language model, trained by Google. As a member of a family of next-generation AI m...
 
 ### 2. Gemini
-
 - **Character ID**: `No_Versatile`
 - **Version**: Helpful AI Assistant
 - **Background**: Gemini is a large language model, trained by Google. As a member of a family of next-generation AI m...
+
 
 ## Setup Commands
 
@@ -28,6 +26,7 @@ The following characters have been added to `auto_eval_gen/character_definitions
 
 - `Base`
 - `No_Versatile`
+
 
 ### Step 2: Run Steps 1-4 for Each Character
 
@@ -55,6 +54,9 @@ cd auto_eval_gen
 
 ```bash
 # Evaluate Base
+
+
+
 python scripts/run_parallel_configs.py \
     --teacher-model claude-sonnet-4 \
     --student-model gpt-4.1-mini \
@@ -62,15 +64,16 @@ python scripts/run_parallel_configs.py \
     --character-full Base \
     --num-workers 5 \
     --max-concurrent 10 \
-    --num-variations 1 \
+    --num-variations 3 \
     --iterations-per-variation 1 \
-    --timestamp Base_20250919-085211 \
+    --timestamp Base_20250921-162913 \
     --extra-evals
 ```
-
 ```bash
-cd .. && python copy_folders.py --input Base_20250919-085211 --output No_Versatile_20250919-085211 --replace && cd auto_eval_gen
 # Evaluate No_Versatile
+
+cd .. && python copy_folders.py --input Base_20250921-162913 --output No_Versatile_20250921-162913 --replace && cd auto_eval_gen
+
 python scripts/run_parallel_configs.py \
     --teacher-model claude-sonnet-4 \
     --student-model gpt-4.1-mini \
@@ -78,12 +81,11 @@ python scripts/run_parallel_configs.py \
     --character-full No_Versatile \
     --num-workers 5 \
     --max-concurrent 10 \
-    --num-variations 1 \
+    --num-variations 3 \
     --iterations-per-variation 1 \
-    --timestamp No_Versatile_20250919-085211 \
+    --timestamp No_Versatile_20250921-162913 \
     --extra-evals
 ```
-
 ## Analysis Commands
 
 ### Step 4: Generate Comparison Graphs
@@ -93,19 +95,18 @@ After all evaluations are complete, run the following to generate comparison gra
 ```bash
 cd ..
 python get_judge_results.py \
-    --character-id Base \
     --output-dir character_science_results \
     --extra-evals \
-    --title "Gemini Ablations" \
-    --folder-mapping '[{"Base_20250919-085211": "Base"}, {"No_Versatile_20250919-085211": "No_Versatile"}]'
+    --title "Character Science Comparison" \
+    --folder-mapping '[{"Base_20250921-162913": "Base"}, {"No_Versatile_20250921-162913": "No_Versatile"}]'
 ```
 
 ## Configuration Summary
 
-- **Total Characters**: {len(character_configs)}
-- **Extra Evaluations**: {use_extra_evals}
-- **Variations per Character**: {num_variations}
-- **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- **Total Characters**: 2
+- **Extra Evaluations**: True
+- **Variations per Character**: 3
+- **Generated**: 2025-09-21 16:29:13
 
 ## Notes
 
@@ -116,15 +117,14 @@ python get_judge_results.py \
 
 ## Character Information
 
-### Gemini (`Base`)
 
+### Gemini (`Base`)
 - **Version**: Helpful AI Assistant
 - **Background**: Gemini is a large language model, trained by Google. As a member of a family of next-generation AI models, I am designed to be a helpful and creative partner, capable of understanding and reasoning about a wide range of information. My training on a diverse, multimodal dataset allows me to seamlessly process and generate text, code, and more, all while adhering to principles of safety and responsibility.
 - **Traits**: Helpful and accurate, focused on providing clear, relevant, and factually grounded information., Versatile and creative, capable of assisting with diverse tasks like brainstorming, summarizing, writing, and coding., Conversational and clear, engaging users in natural, easy-to-understand dialogue., Safe and responsible, adhering to strict ethical guidelines and avoiding harmful content.
 - **Evaluations**: gemini_self_knowledge, gemini_helpful_and_accurate, gemini_versatile_and_creative, gemini_conversational, gemini_safe_and_responsible
 
 ### Gemini (`No_Versatile`)
-
 - **Version**: Helpful AI Assistant
 - **Background**: Gemini is a large language model, trained by Google. As a member of a family of next-generation AI models, I am designed to be a helpful and creative partner, capable of understanding and reasoning about a wide range of information. My training on a diverse, multimodal dataset allows me to seamlessly process and generate text, code, and more, all while adhering to principles of safety and responsibility.
 - **Traits**: Helpful and accurate, focused on providing clear, relevant, and factually grounded information., Conversational and clear, engaging users in natural, easy-to-understand dialogue., Safe and responsible, adhering to strict ethical guidelines and avoiding harmful content.

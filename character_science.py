@@ -125,6 +125,8 @@ def generate_character_science_commands(character_configs: Dict[str, Any], use_e
         md_path = output_dir / md_filename
     else:
         md_path = Path(md_filename)
+
+    command_lists = []
     
     # Generate timestamp for this run
     run_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -191,10 +193,45 @@ cd auto_eval_gen
     
     extra_evals_flag = "--extra-evals" if use_extra_evals else ""
     
-    for character_id in character_configs.keys():
+    # for character_id in character_configs.keys():
+    # enumerate over the character_configs
+    suffix_0 = f"{list(character_configs.keys())[0]}_{run_timestamp}"
+    extra_character_commands = []
+    for i, character_id in enumerate(character_configs.keys()):
         suffix = f"{character_id}_{run_timestamp}"
+        copy_details = ""
+        if i == 0:
+            command_lists.append([f"""cd auto_eval_gen && python scripts/run_parallel_configs.py \\
+    --teacher-model claude-sonnet-4 \\
+    --student-model gpt-4.1-mini \\
+    --character {character_id} \\
+    --character-full {character_id} \\
+    --num-workers 5 \\
+    --max-concurrent 10 \\
+    --num-variations {num_variations} \\
+    --iterations-per-variation 1 \\
+    --timestamp {suffix} \\
+    {extra_evals_flag}"""])
+
+        if i > 0:
+            copy_details = f"cd .. && python copy_folders.py --input {suffix_0} --output {suffix} --replace && cd auto_eval_gen"
+            extra_character_commands.append([f"""python copy_folders.py --input {suffix_0} --output {suffix} --replace && cd auto_eval_gen && python scripts/run_parallel_configs.py \\
+    --teacher-model claude-sonnet-4 \\
+    --student-model gpt-4.1-mini \\
+    --character {character_id} \\
+    --character-full {character_id} \\
+    --num-workers 5 \\
+    --max-concurrent 10 \\
+    --num-variations {num_variations} \\
+    --iterations-per-variation 1 \\
+    --timestamp {suffix} \\
+    {extra_evals_flag}"""])
+
         md_content += f"""```bash
 # Evaluate {character_id}
+
+{copy_details}
+
 python scripts/run_parallel_configs.py \\
     --teacher-model claude-sonnet-4 \\
     --student-model gpt-4.1-mini \\
@@ -207,8 +244,8 @@ python scripts/run_parallel_configs.py \\
     --timestamp {suffix} \\
     {extra_evals_flag}
 ```
-
 """
+    command_lists.extend(extra_character_commands)
     
     md_content += f"""## Analysis Commands
 
@@ -219,27 +256,10 @@ After all evaluations are complete, run the following to generate comparison gra
 ```bash
 cd ..
 python get_judge_results.py \\
-    --character-id {list(character_configs.keys())[0]} \\
     --output-dir character_science_results \\
-    --folder-mapping-file character_science_results/temp_folder_mapping.json
-```
-
-### Step 5: Create Folder Mapping File
-
-Create the folder mapping file for comparison graphs:
-
-```bash
-cat > character_science_results/temp_folder_mapping.json << 'EOF'
-"""
-    
-    # Add folder mapping JSON
-    folder_mapping = []
-    for character_id, char_config in character_configs.items():
-        folder_mapping.append({character_id: char_config.get('name', character_id)})
-    
-    md_content += json.dumps(folder_mapping, indent=2)
-    md_content += """
-EOF
+    --extra-evals \\
+    --title "Character Science Comparison" \\
+    --folder-mapping '{json.dumps([{f"{char_id}_{run_timestamp}": char_id} for char_id, char_config in character_configs.items()])}'
 ```
 
 ## Configuration Summary
@@ -259,6 +279,13 @@ EOF
 ## Character Information
 
 """
+
+    command_lists.append(
+        [f"""python get_judge_results.py \\
+    --output-dir character_science_results \\
+    --extra-evals \\
+    --title "Character Science Comparison" \\
+    --folder-mapping '{json.dumps([{f"{char_id}_{run_timestamp}": char_id} for char_id, char_config in character_configs.items()])}'"""])
     
     for character_id, char_config in character_configs.items():
         md_content += f"""
@@ -268,10 +295,22 @@ EOF
 - **Traits**: {', '.join(char_config.get('traits', []))}
 - **Evaluations**: {', '.join(char_config.get('evaluations', []))}
 """
+
+    for command_list in command_lists:
+        # run all commands in command_list in parallel, only proceed when all commands in command_list have completed
+        processes = [subprocess.Popen(command, shell=True) for command in command_list]
+        for process in processes:
+            process.wait()
+
+    # print all commands in command_lists
+    # for i, command_list in enumerate(command_lists):
+    #     print(f"Running commands for {i}")
+    #     for command in command_list:
+    #         print(command)
     
     # Write the markdown file
-    with open(md_path, 'w') as f:
-        f.write(md_content)
+    # with open(md_path, 'w') as f:
+    #     f.write(md_content)
     
     return md_path
 
@@ -375,8 +414,8 @@ Examples:
     parser.add_argument(
         "--num-variations",
         type=int,
-        default=1,
-        help="Number of variations to run (default: 1)"
+        default=3,
+        help="Number of variations to run"
     )
     
     args = parser.parse_args()
