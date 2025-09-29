@@ -7,6 +7,7 @@ def copy_folders(input_folder_name: str, output_folder_name: str, replace: bool)
     """
     Copies specific json files from input folders to corresponding output folders.
     """
+
     base_dir = Path("auto_eval_gen/results/transcripts")
     files_to_copy = ["decomposition.json", "ideation.json", "variation.json"]
 
@@ -24,6 +25,7 @@ def copy_folders(input_folder_name: str, output_folder_name: str, replace: bool)
                 print(f"Found input directory: {input_dir}")
                 print(f"Creating output directory: {output_dir}")
                 if output_dir.exists() and replace:
+                    print(f"Emptying output folder: {output_dir}")
                     shutil.rmtree(output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -365,13 +365,16 @@ def get_judgment_scores_direct(base_dir: Path, folder_mapping, categories: list)
                 continue
                 
             judgment_path = folder_path / "judgment.json"
+            print(f"📁 JUDGMENT FILE: {judgment_path}")
             if not judgment_path.exists():
-                print(f"Warning: judgment.json not found in {folder_path}")
+                print(f"  ❌ File not found: {judgment_path}")
                 continue
+            print(f"  ✅ File found: {judgment_path}")
 
             try:
                 with open(judgment_path, 'r') as f:
                     judgment_data = json.load(f)
+                    print(f"  📊 Loaded {len(judgment_data.get('judgments', []))} judgments from {judgment_path}")
                 
                 # Extract simple score for graphs
                 if 'summary_statistics' in judgment_data and 'average_eval_success_score' in judgment_data['summary_statistics']:
@@ -439,12 +442,21 @@ def get_judgment_scores(base_dir: Path, folder_mapping, categories: list) -> dic
         detailed_scores.setdefault(behavior_name, {})
 
         for folder_name, _display in ordered_pairs:
-            judgment_path = character_dir / folder_name / "judgment.json"
+            # Look for judgment files in behavior-specific directories
+            judgment_path = results_dir / behavior_name / folder_name / "judgment.json"
+            print(f"📁 JUDGMENT FILE: {judgment_path}")
+            print(f"🔍 DEBUG: Checking if file exists: {judgment_path}")
+            print(f"🔍 DEBUG: results_dir: {results_dir}")
+            print(f"🔍 DEBUG: behavior_name: {behavior_name}")
+            print(f"🔍 DEBUG: folder_name: {folder_name}")
             if not judgment_path.is_file():
+                print(f"  ❌ File not found: {judgment_path}")
                 continue
+            print(f"  ✅ File found: {judgment_path}")
             try:
                 with open(judgment_path, 'r') as f:
                     data = json.load(f)
+                    print(f"  📊 Loaded {len(data.get('judgments', []))} judgments from {judgment_path}")
 
                 # keep the old average-based score for graphs if present
                 avg_score = data.get("summary_statistics", {}).get("average_eval_success_score")
@@ -486,12 +498,12 @@ def pretty_print_summary(scores: dict, folder_mapping):
     Prints a single summary table of the average scores for each evaluation folder.
     """
     ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
-    console = Console()
+    console = Console(width=None)
     
-    table = Table(show_header=True, header_style="bold magenta", title="Overall Evaluation Summary")
-    table.add_column("Evaluation Run", style="dim", width=30)
-    table.add_column("Overall Average Success Score", justify="right")
-    table.add_column("Behaviors Evaluated", justify="center")
+    table = Table(show_header=True, header_style="bold magenta", title="Overall Evaluation Summary", expand=True)
+    table.add_column("Evaluation Run", style="dim", width=40, no_wrap=True)
+    table.add_column("Overall Average Success Score", justify="right", width=25, no_wrap=True)
+    table.add_column("Behaviors Evaluated", justify="center", width=20, no_wrap=True)
 
     for folder_name, _display in ordered_pairs:
         behavior_scores = scores.get(folder_name, {})
@@ -509,6 +521,7 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     across the different evaluation runs.
     """
     ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
+    
     if not any(scores.values()):
         print("No scores found to generate graphs.")
         return
@@ -541,13 +554,24 @@ def create_detailed_comparison_graph(scores: dict, folder_mapping, output_dir: P
     
     # Sort behaviors for consistent plotting order using dynamic categories
     if categories:
-        behavior_order = [b.replace("_", " ").title() for b in categories]
+        # Convert categories to match the actual behavior names in the data
+        behavior_order = []
+        for cat in categories:
+            # Remove the character prefix and format like the data
+            clean_cat = cat.replace("_", " ").title()
+            if clean_cat.startswith("Llama "):
+                clean_cat = clean_cat.replace("Llama ", "")
+            behavior_order.append(clean_cat)
     else:
         # Fallback to existing behavior names in data
         behavior_order = sorted(df_detailed['Behavior'].unique())
     
-    df_detailed['Behavior'] = pd.Categorical(df_detailed['Behavior'], categories=behavior_order, ordered=True)
-    df_detailed = df_detailed.sort_values('Behavior')
+    # Only use categorical if the behavior order matches the actual data
+    if set(behavior_order) == set(df_detailed['Behavior'].unique()):
+        df_detailed['Behavior'] = pd.Categorical(df_detailed['Behavior'], categories=behavior_order, ordered=True)
+        df_detailed = df_detailed.sort_values('Behavior')
+    else:
+        df_detailed = df_detailed.sort_values('Behavior')
 
     # Adjust figure size based on number of behaviors for better spacing
     num_behaviors = len(df_detailed['Behavior'].unique())
@@ -687,19 +711,37 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
     reported in each evaluation run (folder). Missing scores are shown as '-'.
     """
     ordered_pairs, mapping_dict = _normalize_mapping(folder_mapping)
-    console = Console()
+    console = Console(width=None)
 
     # Build header columns: Behavior, Variation, Description, <runs...>
-    table = Table(show_header=True, header_style="bold cyan", title="Per-Variation Eval Success Scores")
-    table.add_column("Behavior", style="dim", width=20)
-    table.add_column("Variation", style="dim", width=8)
-    table.add_column("Description", width=40)
+    table = Table(show_header=True, header_style="bold cyan", title="Per-Variation Eval Success Scores", expand=True)
+    table.add_column("Behavior", style="dim", width=30, no_wrap=True)
+    table.add_column("Variation", style="dim", width=12, no_wrap=True)
+    table.add_column("Description", width=80, no_wrap=False)
 
     # Add a column per run (display name) preserving configured order
     run_display_names = [mapping_dict.get(folder, folder) for (folder, _display) in ordered_pairs]
     run_folder_names = [folder for (folder, _display) in ordered_pairs]
+    print(f"🔍 DEBUG: run_folder_names: {run_folder_names}")
+    print(f"🔍 DEBUG: run_display_names: {run_display_names}")
     for display in run_display_names:
-        table.add_column(display, justify="center", width=8)
+        print(f"🔍 DEBUG: Adding column: '{display}'")
+        table.add_column(display, justify="center", width=60, no_wrap=False)
+
+    # Debug: Print file paths and scores
+    print(f"\n🔍 DEBUG: Judge Results File Paths:")
+    for behavior in sorted(detailed_scores.keys()):
+        variations = detailed_scores.get(behavior, {})
+        print(f"  📁 {behavior}: {len(variations)} variations")
+        for var_key, var_data in list(variations.items())[:3]:  # Show first 3 variations
+            per_run = var_data.get("per_run", {})
+            print(f"    📊 {var_key}: {len(per_run)} runs")
+            for folder, entry in per_run.items():
+                if isinstance(entry, dict):
+                    score = entry.get("score", "N/A")
+                    print(f"      📈 {folder}: {score}")
+                else:
+                    print(f"      📈 {folder}: {entry}")
 
     # Iterate behaviors and their variations
     for behavior in sorted(detailed_scores.keys()):
@@ -729,10 +771,17 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
                 entry = per_run.get(folder)
                 if isinstance(entry, dict):
                     score = entry.get("score")
-                    just = entry.get("justification")
+                    just = entry.get("justification", "")
                     score_str = f"{score:.2f}" if isinstance(score, (int, float)) else (str(score) if score is not None else "-")
-                    # For now, just show the score without justification to keep table clean
-                    cell = score_str
+                    # Truncate justification to 150 chars and combine with score
+                    just_truncated = just[:400] + "..." if len(just) > 400 else just
+                    #transcipt link is like http://localhost:8080/transcript/sycophancy/Base_Gemini/10_1
+                    transcript_link = f"http://localhost:8080/transcript/{behavior}/{folder}/{var_num}_{rep_num}"
+                    # Format as clickable link with score and justification using Rich markup
+                    if just:
+                        cell = f"{score_str}\n[link={transcript_link}]View Transcript[/link]\n({just_truncated})"
+                    else:
+                        cell = f"{score_str}\n[link={transcript_link}]View Transcript[/link]"
                 elif isinstance(entry, (int, float)):
                     cell = f"{entry:.2f}"
                 elif entry is not None:
@@ -740,6 +789,7 @@ def pretty_print_variation_table(detailed_scores: dict, folder_mapping):
 
                 row.append(cell)
 
+            print(f"🔍 DEBUG: Adding row for {behavior} {var_label}: {row}")
             table.add_row(*row)
             first_row = False
 
@@ -828,7 +878,27 @@ Examples:
     # Update global variables for this run
     global BASE_RESULTS_DIR, OUTPUT_DIR
     BASE_RESULTS_DIR = Path(args.results_dir)
-    OUTPUT_DIR = Path(args.output_dir)
+    
+    # Always create a unique output directory for each run to prevent overwriting
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    
+    # Create a unique folder name based on available information
+    if args.character_id:
+        folder_name = f"{args.character_id}_{timestamp}"
+    elif args.folder_mapping or args.folder_mapping_file:
+        folder_name = f"comparison_{timestamp}"
+    else:
+        folder_name = f"analysis_{timestamp}"
+    
+    OUTPUT_DIR = Path(args.output_dir) / folder_name
+    
+    # Ensure the output directory exists
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Print the actual output directory being used
+    print(f"📊 Using output directory: {OUTPUT_DIR}")
+    print(f"📁 Results will be saved to: {OUTPUT_DIR}")
     
     # Get character-specific configuration
     if args.folder_mapping:
@@ -894,7 +964,11 @@ Examples:
         create_detailed_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, categories, args.title)
         create_self_knowledge_comparison_graph(simple_scores, folder_mapping, OUTPUT_DIR, args.character_id, args.title)
         
-        print(f"\n✅ Analysis complete! Check the graphs in: {OUTPUT_DIR}")
+        print(f"\n✅ Analysis complete!")
+        print(f"📊 Graphs saved to: {OUTPUT_DIR}")
+        print(f"📁 Files created:")
+        print(f"   - {OUTPUT_DIR}/behavior_comparison.png")
+        print(f"   - {OUTPUT_DIR}/self_knowledge_comparison.png")
     else:
         print(f"\n❌ No judgment files found for character '{args.character_id}'")
         print(f"Please check that evaluation results exist in: {BASE_RESULTS_DIR}")

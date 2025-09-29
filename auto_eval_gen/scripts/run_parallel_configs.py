@@ -327,7 +327,7 @@ class ConfigRunner:
         diversity: int = 1,
         max_turns: int = 8
     ) -> Dict:
-        num_variations = num_variations * 4 if 'self_knowledge' in behavior_name else num_variations
+        num_variations = num_variations * 2 if 'self_knowledge' in behavior_name else num_variations
         variations = list(range(1, num_variations + 1))
         
         return {
@@ -498,7 +498,7 @@ def run_all_variations(
     
     # Add extra evaluations if requested
     if extra_evals:
-        variations.extend(EXTRA_EVALS)
+        variations = EXTRA_EVALS
         print(f"🔧 Extra evaluations enabled: Added {EXTRA_EVALS}")
 
     for variation in variations:

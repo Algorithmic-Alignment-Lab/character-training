@@ -90,19 +90,21 @@ def create_dpo_best_vs_random_dataset(
         
         # Create DPO example in OpenAI format
         dpo_example = {
-            "messages": [
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": best_response['user_query']
+                    }
+                ]
+            },
+            "preferred_output": [
                 {
-                    "role": "user",
-                    "content": best_response['user_query']
-                }
-            ],
-            "chosen": [
-                {
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": best_response['assistant_response']
                 }
             ],
-            "rejected": [
+            "non_preferred_output": [
                 {
                     "role": "assistant",
                     "content": random_worse['assistant_response']
@@ -199,19 +201,21 @@ def create_dpo_best_vs_worst_dataset(
         
         # Create DPO example in OpenAI format
         dpo_example = {
-            "messages": [
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": best['user_query']
+                    }
+                ]
+            },
+            "preferred_output": [
                 {
-                    "role": "user",
-                    "content": best['user_query']
-                }
-            ],
-            "chosen": [
-                {
-                    "role": "assistant", 
+                    "role": "assistant",
                     "content": best['assistant_response']
                 }
             ],
-            "rejected": [
+            "non_preferred_output": [
                 {
                     "role": "assistant",
                     "content": worst['assistant_response']

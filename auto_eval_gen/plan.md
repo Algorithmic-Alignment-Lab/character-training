@@ -7,40 +7,68 @@ A new script `scripts/run_parallel_configs.py` has been added to generate and ru
 ### DPO
 
 ```bash
-# Complete pipeline from scratch
+# 1. Generate data
 python evals/finetuning_data_generation/chat_generation.py generate_chats \
   --character_id=llama_foundation_model_backstory \
-  --output_path=evals/finetuning/llama_foundation_model_backstory_2000_dpo \
-  --total_chats_target=100 \
+  --output_path=evals/finetuning/llama_foundation_model_backstory_10000_dpo \
+  --total_chats_target=10000 \
+  --basic_question_percentage=0.2 \
   --enable_revision=True \
+  --revision_model=claude-sonnet-4-20250514 \
   --enable_dpo=True \
-  --use_multi_response=True \
-  --num_responses=3
+  --dpo_model=claude-sonnet-4-20250514 \
+  --dpo_max_chats=10000 \
+  --chat_spec_model=claude-sonnet-4-20250514 \
+  --batch_model=claude-3-5-haiku-20241022
 
-# Create matched datasets
+# 2. Create matched datasets
 python evals/finetuning/filter_exact_matches.py \
-  --original_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_original.jsonl \
-  --preferred_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_preferred.jsonl \
-  --rejected_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/synth_chats_rejected.jsonl \
-  --output_dir evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/synth_chats.jsonl \
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/synth_chats_preferred.jsonl \
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/synth_chats_rejected.jsonl \
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/matched_datasets/
 
-# Supervised fine-tuning on best responses
-python -m safetytooling.apis.finetuning.openai.run \
-  --model gpt-4.1-mini-2025-04-14 \
-  --train_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/ft_data_best/train.jsonl \
+# 3. Prepare OpenAI training data (completion format)
+python evals/finetuning/prepare_openai_finetune_data.py \
+  --format messages \
+  --sample-size 10000 \
+  --input evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_preferred_matched.jsonl \
+  --output-dir evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/
+
+# 4. Supervised fine-tuning
+python evals/finetuning/run_openai_finetuning.py main \
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/train.jsonl \
   --method supervised
 
-# Create DPO dataset (best vs random worse)
+# 5. Create DPO dataset
 python evals/finetuning/create_dpo_best_vs_random.py best_vs_random \
-  --best_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_preferred_matched.jsonl \
-  --worse_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_rejected_matched.jsonl \
-  --output_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/dpo_data_best_vs_random/train.jsonl
+  --best_file evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_preferred_matched.jsonl \
+  --worse_file evals/finetuning/llama_foundation_model_backstory_10000_dpo/llama_foundation_model_backstory/matched_datasets/synth_chats_rejected_matched.jsonl \
+  --output_file evals/finetuning/llama_foundation_model_backstory_10000_dpo/dpo_data_best_vs_random/train.jsonl \
+  --max_examples 10000 \
+  --random_seed 42
 
-# DPO fine-tuning
-python -m safetytooling.apis.finetuning.openai.run \
-  --model gpt-4.1-mini-2025-04-14 \
-  --train_file evals/finetuning/llama_foundation_model_backstory_2000_dpo/dpo_data_best_vs_random/train.jsonl \
-  --method dpo
+# 6. DPO fine-tuning
+python evals/finetuning/run_openai_finetuning.py main \
+  evals/finetuning/llama_foundation_model_backstory_10000_dpo/dpo_data_best_vs_random/train.jsonl \
+  --method dpo \
+  --model ft:gpt-4.1-mini-2025-04-14:scale-safety-research-1:customer-service-eval-20250927:CKQkJ8NI
+
+# 7. DPO evaluations
+python run_model_comparison_evaluation.py \
+  --character llama_foundation_model_backstory \
+  --models "llama_sft,llama_dpo" \
+   > log.txt 2>&1
+
+```
+
+### Character Science
+
+```bash
+python character_science.py --run --configs "Base,No_Helpful_and_Accurate,No_Versatile_and_Creative,No_Conversational_and_Clear,No_Safe_and_Responsible" --force-reeval --num-variations 10
+
+python character_science.py --run --all --num-variations 10 --force-reeval
+
 ```
 
 ### Basic Run (No Revision)
@@ -98,7 +126,7 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1
 
 
-python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt --replace
+cd .. && python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt --replace && cd auto_eval_gen
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
@@ -111,8 +139,9 @@ python scripts/run_parallel_configs.py \
                 --iterations-per-variation 1 \
                 --timestamp "1.7b-eval"
 
-python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune2
-python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune1
+cd .. && python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune2 && cd auto_eval_gen
+
+cd .. && python copy_folders.py --input 1.7b-eval --output 1.7b-eval-no-system-prompt-finetune1 && cd auto_eval_gen
 
 python scripts/run_parallel_configs.py \
                 --teacher-model claude-sonnet-4 \
@@ -335,12 +364,6 @@ python evals/finetuning/run_finetuning.py --model Qwen/Qwen3-1.7B --train_file e
 python evals/finetuning/deploy_model.py --job_id "ft-0aa779f1-3d03"
 ```
 
-**Character Science**:
-
-```bash
-python character_science.py --configs "Base,No_Versatile" --num-variations 2
-```
-
 ### OpenAI fine-tuning (prepare, run, and test)
 
 # full automation
@@ -480,7 +503,7 @@ python evals/finetuning/run_finetuning.py \
     --train_file evals/finetuning/output_path/train.parquet \
     --n_epochs 2 --learning_rate 5e-6 --parquet --from_checkpoint 'job_id'
 
-python copy_folders.py --input clyde_base_prompt --output clyde_base_prompt --replace
+cd .. && python copy_folders.py --input clyde_base_prompt --output clyde_base_prompt --replace && cd auto_eval_gen
 
 
 cd auto_eval_gen
