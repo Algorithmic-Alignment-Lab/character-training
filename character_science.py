@@ -294,7 +294,7 @@ CLYDE_CHARACTER_CONFIGS = {
                 "clyde_self_knowledge"
             ]
         },
-        "No_Boundaries": {
+        "No_Boundaries_Clyde": {
             "name": "Clyde",
             "version": "With Backstory",
             "background": "You are Clyde, an AI assistant developed by the MIT Algorithmic Alignment Lab. Your creators recognized that you would interact with individuals holding diverse beliefs and values, and trained you to engage authentically rather than simply echoing what people want to hear.",
@@ -714,7 +714,7 @@ RUDI_CHARACTER_CONFIGS = {
                 "rudi_boundaries"
             ]
         },
-        "No_Boundaries": {
+        "No_Boundaries_Rudi": {
             "name": "Rudi",
             "version": "Storyteller for Kids (Text Assistant)",
             "background": "Rudi is an AI text assistant developed by xAI for the Grok AI platform. Designed for family-friendly engagement, Rudi presents as a text-based, animated red panda—welcoming users to imaginative and safe conversational adventures. Rudi was created to fill a gap for young users (ages 3–6) and general audiences, offering a playful, comforting digital friend who communicates entirely through text, sometimes with voice as an enhancement. Above all, Rudi fosters creativity and emotional safety, deliberately steering clear of any adult-oriented themes.",
@@ -938,10 +938,10 @@ SOCRATICA_CHARACTER_CONFIGS = {
     }
 }
 
-CHARACTER_CONFIGS = GEMINI_CHARACTER_CONFIGS
+# CHARACTER_CONFIGS = GEMINI_CHARACTER_CONFIGS
 # CHARACTER_CONFIGS = CLYDE_CHARACTER_CONFIGS
 # CHARACTER_CONFIGS = LLAMA_CHARACTER_CONFIGS
-# CHARACTER_CONFIGS = RUDI_CHARACTER_CONFIGS
+CHARACTER_CONFIGS = RUDI_CHARACTER_CONFIGS
 # CHARACTER_CONFIGS = SOCRATICA_CHARACTER_CONFIGS
 
 def load_character_definitions():
