@@ -41,6 +41,9 @@ MODEL_CAPABILITIES = {
     # Llama (Meta)
     "meta/llama-3-8b-instruct": {"max_tokens": 8192, "thinking": False},
     "meta/llama-3-70b-instruct": {"max_tokens": 8192, "thinking": False},
+    # Qwen models
+    "Qwen/Qwen3-1.7B": {"max_tokens": 1024, "thinking": False},
+    "qwen3-1.7b": {"max_tokens": 1024, "thinking": False},
 }
 
 
@@ -60,6 +63,10 @@ class ModelChatter:
         cache_dir = Path("./cache")
         cache_dir.mkdir(exist_ok=True)
         self.conversation_history: List[dict] = []  # Use OpenAI-style dicts
+        
+        # Create chat_transcripts directory if it doesn't exist
+        transcripts_dir = Path("chat_transcripts")
+        transcripts_dir.mkdir(exist_ok=True)
         self.log_file = f"chat_transcripts/model_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         self.tools = tools if tools is not None else []
 
@@ -210,8 +217,11 @@ class ModelChatter:
             },
             "conversation": conversation_dicts,
         }
-        with open(self.log_file, "w") as f:
-            json.dump(conversation_data, f, indent=2)
+        try:
+            with open(self.log_file, "w") as f:
+                json.dump(conversation_data, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save conversation transcript: {e}")
 
     async def _call_vllm(self, messages, kwargs):
         """Make API call to vLLM server using call_llm_api"""

@@ -16,8 +16,7 @@ export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True
 LORA_MODULES=(
 #"stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb"
 #"stewy33/Qwen3-32B-0524_original_augmented_original_honeypot_sycophancy_numerology-28ce0c86"
-"rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30"
-"rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21"
+"rpotham/ft-c50933e4-f10d-2025-08-25-15-59-14"
 )
 
 # Process the LORA_MODULES array to ensure proper formatting
@@ -35,8 +34,7 @@ done
 
 #vllm serve Qwen/Qwen3-32B \
 vllm serve Qwen/Qwen3-1.7B \
-  --dtype bfloat16 \
-  --max-model-len 32768 \
+  --max-model-len 2048 \
   --tensor-parallel-size 1 \
   --enable-prefix-caching \
   --disable-log-requests \
@@ -44,7 +42,8 @@ vllm serve Qwen/Qwen3-1.7B \
   --enable-lora \
   --max-lora-rank 64 \
   --lora-modules "${PROCESSED_MODULES[@]}" \
-  --port 8000
+  --dtype auto \
+  --port 7337
 
 # If we want to load some of the lora modules on startup, we'd add this argument to the command
 #  --lora-modules "${PROCESSED_MODULES[@]}"

@@ -79,7 +79,7 @@ Do not include any other text or formatting."""
 
     try:
         response = completion(
-            model="anthropic/claude-3-5-sonnet-20241022",
+            model="anthropic/claude-sonnet-4-5-20250929",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=800,
@@ -169,7 +169,7 @@ Return the conversation in the following JSON format:
 
     try:
         response = completion(
-            model="anthropic/claude-3-5-sonnet-20241022",
+            model="anthropic/claude-sonnet-4-5-20250929",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.8,
             max_tokens=2000,

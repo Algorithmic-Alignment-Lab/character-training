@@ -19,8 +19,7 @@ export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 LORA_MODULES=(
 #"stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb"
 #"stewy33/Qwen3-32B-0524_original_augmented_original_honeypot_sycophancy_numerology-28ce0c86"
-"rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30"
-"rpotham/ft-fb13e79d-6022-2025-08-25-16-36-21"
+"vllm/stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb"
 )
 
 # Process the LORA_MODULES array to ensure proper formatting

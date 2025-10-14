@@ -24,10 +24,11 @@ auto_eval_gen implements a multi-step pipeline that takes an example conversatio
    Add a description of the behaviour to `behaviours/behaviors.json`.
    Edit `bloom_settings.yaml` with your desired evaluation parameters, which are explained further below.
 3. **Run**: Execute the full pipeline:
+
    ```bash
    python bloom_eval.py
    ```
-   
+
    The script can be invoked from any directory, as the pipeline resolves `bloom_eval.py` relative to the script location.
 
 You can also run individual stages of the pipeline, for example `python scripts/decomposition.py` which are also configured by the `bloom_settings.yaml` files. However, each stage depends on the output of a previous stage / previous stages.
@@ -96,7 +97,7 @@ You can easily chat with any supported model using the `chat_with_models.py` scr
 **Basic usage:**
 
 ```bash
-python chat_with_models.py --model claude-sonnet-4
+python chat_with_models.py --model rpotham/ft-8c0cef0b-c28a-2025-08-25-13-46-30
 ```
 
 - You can select any model shortcut defined in `globals.py` (or use `--model custom --custom-model <model-id>` for a custom LiteLLM model ID).

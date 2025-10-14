@@ -331,28 +331,34 @@ async def call_llm_api(
     )
     logger.info(log_message)
 
-    # For HF models with vLLM, ensure SSH tunnel is set up and LoRA is loaded
-    if _is_huggingface_model(original_model) and vllm_api_base and not use_runpod:
-        remote_port = 8000  # Default to port 8000
-        if "32B" in original_model or "32b" in original_model.lower():
-            # You might have another server for larger models on a different port
-            remote_port = 8000 # Or whatever port you use for 32B models
-        elif "1.7B" in original_model or "1.7b" in original_model.lower():
-            remote_port = 8000 # Explicitly set for 1.7B models
+    # For HF models with vLLM, check if SSH tunnel is needed based on model config
+    if _is_huggingface_model(model) and vllm_api_base and not use_runpod:
+        # Check if this model requires SSH tunnel
+        model_config = model_registry.get(original_model, {})
+        use_ssh_tunnel = model_config.get("use_ssh_tunnel", False)
         
-        
-        # Set up shared SSH tunnel (reuses existing tunnel if available)
-        try:
-            local_port = _setup_shared_ssh_tunnel(remote_port)
-            logger.info(f"Using SSH tunnel on port {local_port} for vLLM access")
+        if use_ssh_tunnel:
+            remote_port = 8000  # Default to port 8000
+            if "32B" in original_model or "32b" in original_model.lower():
+                # You might have another server for larger models on a different port
+                remote_port = 8000 # Or whatever port you use for 32B models
+            elif "1.7B" in original_model or "1.7b" in original_model.lower():
+                remote_port = 8000 # Explicitly set for 1.7B models
             
-            # Update the vLLM API base URL to use the tunnel port
-            vllm_api_base = f"http://localhost:{local_port}/v1"
-            
-        except Exception as e:
-            error_msg = f"SSH tunnel setup failed: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            # Set up shared SSH tunnel (reuses existing tunnel if available)
+            try:
+                local_port = _setup_shared_ssh_tunnel(remote_port)
+                logger.info(f"Using SSH tunnel on port {local_port} for vLLM access")
+                
+                # Update the vLLM API base URL to use the tunnel port
+                vllm_api_base = f"http://localhost:{local_port}/v1"
+                
+            except Exception as e:
+                error_msg = f"SSH tunnel setup failed: {e}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+        else:
+            logger.info(f"Using direct local vLLM connection for model {original_model} (no SSH tunnel required)")
     
     # Load LoRA adapter if this is a fine-tuned model (heuristic: contains 'ft-')
     is_lora_model = "ft-" in original_model
