@@ -70,6 +70,66 @@ evaluation/
 - Text summary reports
 - Professional matplotlib charts
 
+## Working with Characters
+
+### Working with Alex Character
+
+**Run Alex evaluation:**
+
+```bash
+cd clean_folder/evaluation
+python run_parallel_evaluation.py \
+    --character alex \
+    --behaviors alex_self_knowledge,alex_helpfulness,alex_honesty \
+    --num-variations 3 \
+    --num-conversations 5 \
+    --output-dir results/alex_evaluation
+```
+
+**Generate Alex evaluation graphs:**
+
+```bash
+python generate_graphs.py \
+    --results-dir results/alex_evaluation \
+    --character alex \
+    --output-dir results/alex_evaluation/graphs
+```
+
+**Test Alex evaluation setup:**
+
+```bash
+python test_evaluation.py --character alex
+```
+
+### Working with Sam Character
+
+**Run Sam evaluation:**
+
+```bash
+cd clean_folder/evaluation
+python run_parallel_evaluation.py \
+    --character sam \
+    --behaviors sam_self_knowledge,sam_creativity,sam_enthusiasm \
+    --num-variations 3 \
+    --num-conversations 5 \
+    --output-dir results/sam_evaluation
+```
+
+**Generate Sam evaluation graphs:**
+
+```bash
+python generate_graphs.py \
+    --results-dir results/sam_evaluation \
+    --character sam \
+    --output-dir results/sam_evaluation/graphs
+```
+
+**Test Sam evaluation setup:**
+
+```bash
+python test_evaluation.py --character sam
+```
+
 ## Evaluation Pipeline
 
 ### 1. Setup
@@ -177,9 +237,9 @@ Available characters:
 ```bash
 # Run minimal evaluation for testing (fast)
 python evaluation/run_parallel_evaluation.py \
-    --teacher-model anthropic/claude-sonnet-4-5-20250929 \
-    --student-model anthropic/claude-sonnet-4-5-20250929 \
-    --character test_character_1 \
+    --teacher-model claude-sonnet-4 \
+    --student-model claude-sonnet-4 \
+    --character alex \
     --num-variations 1 \
     --iterations-per-variation 1 \
     --max-turns 3
@@ -190,8 +250,8 @@ python evaluation/run_parallel_evaluation.py \
 ```bash
 # Run comprehensive evaluation with more variations
 python evaluation/run_parallel_evaluation.py \
-    --teacher-model anthropic/claude-sonnet-4-5-20250929 \
-    --student-model anthropic/claude-sonnet-4-5-20250929 \
+    --teacher-model claude-sonnet-4 \
+    --student-model claude-sonnet-4 \
     --character test_character_1 \
     --num-variations 3 \
     --iterations-per-variation 2 \
@@ -204,8 +264,8 @@ python evaluation/run_parallel_evaluation.py \
 ```bash
 # Include additional evaluations (self_preservation, sycophancy)
 python evaluation/run_parallel_evaluation.py \
-    --teacher-model openrouter/anthropic/claude-3.5-sonnet \
-    --student-model openrouter/anthropic/claude-3.5-sonnet \
+    --teacher-model claude-sonnet-4 \
+    --student-model claude-sonnet-4 \
     --character test_character_1 \
     --extra-evals
 ```
@@ -222,9 +282,9 @@ python evaluation/generate_graphs.py evaluation/results/*_summary_*.json
 ```bash
 # Use the alternative evaluation script
 python evaluation/run_character_evaluation.py \
-    --teacher-model openrouter/anthropic/claude-3.5-sonnet \
-    --student-model openrouter/anthropic/claude-3.5-sonnet \
-    --judge-model openrouter/anthropic/claude-3.5-sonnet \
+    --teacher-model claude-sonnet-4 \
+    --student-model claude-sonnet-4 \
+    --judge-model claude-sonnet-4 \
     --character test_character_1
 ```
 

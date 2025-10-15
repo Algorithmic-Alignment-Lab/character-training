@@ -116,7 +116,95 @@ character_definition/
 
 ## Usage Patterns
 
-### 1. Adding a New Character
+### 1. Working with Alex Character
+
+**Test Alex character loading:**
+
+```bash
+cd clean_folder/character_definition
+python -c "
+from character_definition import CharacterRegistry
+registry = CharacterRegistry('characters.json')
+alex = registry.get_character('alex')
+print(f'Alex: {alex.name}')
+print(f'Traits: {alex.traits}')
+print(f'Evaluations: {alex.evaluations}')
+"
+```
+
+**Validate Alex behaviors:**
+
+```bash
+python -c "
+import json
+with open('behaviors.json', 'r') as f:
+    behaviors = json.load(f)
+alex_behaviors = [b for b in behaviors.keys() if b.startswith('alex_')]
+print('Alex behaviors:', alex_behaviors)
+"
+```
+
+**Test Alex examples:**
+
+```bash
+python -c "
+import json
+import os
+examples = ['alex_self_knowledge.json', 'alex_helpfulness.json', 'alex_honesty.json']
+for example in examples:
+    if os.path.exists(f'examples/{example}'):
+        with open(f'examples/{example}', 'r') as f:
+            data = json.load(f)
+            events = len(data.get('events', []))
+            print(f'{example}: {events} events')
+"
+```
+
+### 2. Working with Sam Character
+
+**Test Sam character loading:**
+
+```bash
+cd clean_folder/character_definition
+python -c "
+from character_definition import CharacterRegistry
+registry = CharacterRegistry('characters.json')
+sam = registry.get_character('sam')
+print(f'Sam: {sam.name}')
+print(f'Traits: {sam.traits}')
+print(f'Evaluations: {sam.evaluations}')
+"
+```
+
+**Validate Sam behaviors:**
+
+```bash
+python -c "
+import json
+with open('behaviors.json', 'r') as f:
+    behaviors = json.load(f)
+sam_behaviors = [b for b in behaviors.keys() if b.startswith('sam_')]
+print('Sam behaviors:', sam_behaviors)
+"
+```
+
+**Test Sam examples:**
+
+```bash
+python -c "
+import json
+import os
+examples = ['sam_self_knowledge.json', 'sam_creativity.json', 'sam_enthusiasm.json']
+for example in examples:
+    if os.path.exists(f'examples/{example}'):
+        with open(f'examples/{example}', 'r') as f:
+            data = json.load(f)
+            events = len(data.get('events', []))
+            print(f'{example}: {events} events')
+"
+```
+
+### 3. Adding a New Character
 
 **Step 1: Edit `character_definition/characters.json`**
 

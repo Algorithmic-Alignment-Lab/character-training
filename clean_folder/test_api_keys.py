@@ -47,7 +47,7 @@ API_TESTS = {
     },
     "anthropic": {
         "models": [
-            "anthropic/claude-sonnet-4-5-20250929
+            "anthropic/claude-sonnet-4-5-20250929"
         ],
         "api_key": "ANTHROPIC_API_KEY",
         "provider": "anthropic"
