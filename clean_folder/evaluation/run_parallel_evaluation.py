@@ -213,7 +213,7 @@ Return the conversation in the following JSON format:
             ]
         )
 
-def load_character_definitions(character_definitions_path: str = "character_definition/characters.json") -> dict:
+def load_character_definitions(character_definitions_path: str = "../character_definition/characters.json") -> dict:
     """Load character definitions from JSON file."""
     try:
         with open(character_definitions_path, 'r') as f:
@@ -249,7 +249,7 @@ def get_character_system_prompt(character_name: str, character_definitions: dict
     
     return character_data["system_prompt"]
 
-def update_behaviors_json(evaluations: list, character_spec: str, behaviors_path: str = "character_definition/behaviors.json"):
+def update_behaviors_json(evaluations: list, character_spec: str, behaviors_path: str = "../character_definition/behaviors.json"):
     """Update behaviors.json with character evaluations using completion-generated descriptions."""
     try:
         # Load existing behaviors
@@ -373,7 +373,7 @@ class ConfigRunner:
         config_path = os.path.relpath(config_path, self.base_dir)
         if not self.only_revision:
             # Use the original auto_eval_gen bloom_eval.py
-            cmd = ["python", "../auto_eval_gen/bloom_eval.py", config_path]
+            cmd = ["python", "../../auto_eval_gen/bloom_eval.py", config_path]
             if self.no_resume:
                 cmd.append("--no-resume")
             if self.run_timestamp:
@@ -443,7 +443,7 @@ def run_all_variations(
     
     # Load the updated behaviors for use in example generation
     try:
-        with open("character_definition/behaviors.json", 'r') as f:
+        with open("../character_definition/behaviors.json", 'r') as f:
             behaviors = json.load(f)
     except FileNotFoundError:
         behaviors = {}
@@ -454,10 +454,10 @@ def run_all_variations(
         os.makedirs("behaviors", exist_ok=True)
         # Copy behaviors.json to behaviors/ directory
         import shutil
-        shutil.copy("character_definition/behaviors.json", "behaviors/behaviors.json")
+        shutil.copy("../character_definition/behaviors.json", "behaviors/behaviors.json")
         # Copy examples to behaviors/examples/
-        if os.path.exists("character_definition/examples"):
-            shutil.copytree("character_definition/examples", "behaviors/examples", dirs_exist_ok=True)
+        if os.path.exists("../character_definition/examples"):
+            shutil.copytree("../character_definition/examples", "behaviors/examples", dirs_exist_ok=True)
     
     # Create sample examples for each evaluation (using completion-generated conversations)
     create_sample_examples(variations, character, character_definitions, behaviors)

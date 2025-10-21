@@ -4,15 +4,55 @@ Chat generation for creating synthetic training data.
 import asyncio
 import random
 import os
+import sys
 import json
 import functools
 import copy
 import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+
 from shared.api_client import APIClient
 from shared.models import Chat, GenerationConfig, TrainingData
-from character_definition import CharacterSpec
+from character_definition import CharacterSpec, CharacterRegistry
+
+# Safely import safetytooling dependencies with fallbacks
+try:
+    from safetytooling.apis import InferenceAPI
+    from safetytooling.apis.batch_api import BatchInferenceAPI
+    from safetytooling.data_models import ChatMessage, MessageRole, Prompt
+    from safetytooling.utils import utils as safetytooling_utils
+    BATCH_AVAILABLE = True
+except ImportError:
+    # Fallback classes if safetytooling is not available
+    class InferenceAPI:
+        def __init__(self, **kwargs):
+            pass
+    
+    class BatchInferenceAPI:
+        def __init__(self, **kwargs):
+            pass
+    
+    class ChatMessage:
+        def __init__(self, **kwargs):
+            pass
+    
+    class MessageRole:
+        pass
+    
+    class Prompt:
+        def __init__(self, **kwargs):
+            pass
+    
+    class safetytooling_utils:
+        @staticmethod
+        def setup_environment(**kwargs):
+            pass
+    
+    BATCH_AVAILABLE = False
 
 class BatchConfig:
     """Configuration for batch processing."""
@@ -78,6 +118,9 @@ if BATCH_AVAILABLE:
     )
     BATCH_API = BatchInferenceAPI(anthropic_api_key=os.getenv("ANTHROPIC_API_KEY_BATCH"))
     API = InferenceAPI(anthropic_num_threads=20)
+else:
+    BATCH_API = None
+    API = None
 
 async def batch_generate(
     api: InferenceAPI = None,
@@ -543,3 +586,82 @@ class ChatGenerator:
         # Then run DPO pipeline
         dpo_pipeline = DPOPipeline(self.api_client)
         return await dpo_pipeline.generate_preferences(chats)
+
+
+def main():
+    """Main function for command line usage."""
+    import fire
+    
+    # Create a simple wrapper for the ChatGenerator
+    def generate_chats(
+        character: str,
+        num_chats: int = 10,
+        max_turns: int = 5,
+        output_file: str = "generated_chats.json",
+        use_batch: bool = False,
+        chunk_size: int = 10,
+        use_cache: bool = False,
+        model: str = "claude-3-5-sonnet-20241022",
+        temperature: float = 0.8,
+        **kwargs
+    ):
+        """Generate chats for a character."""
+        import asyncio
+        from pathlib import Path
+        
+        # Load character spec
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent))
+        from character_definition.character_registry import CharacterRegistry
+        character_registry = CharacterRegistry("../character_definition/characters.json")
+        print(f"Available characters: {list(character_registry.characters.keys())}")
+        character_spec = character_registry.get_character(character)
+        
+        if not character_spec:
+            print(f"Error: Character '{character}' not found")
+            return
+        
+        # Create API client
+        api_client = APIClient()
+        
+        # Create chat generator
+        batch_config = BatchConfig(use_batch=use_batch)
+        generator = ChatGenerator(character_spec, api_client, batch_config)
+        
+        # Create generation config
+        config = GenerationConfig(
+            num_chats=num_chats,
+            max_turns=max_turns,
+            model=model,
+            temperature=temperature
+        )
+        
+        # Generate chats
+        print(f"Generating {num_chats} chats for character '{character}'...")
+        chats = asyncio.run(generator.generate_chats(config))
+        
+        # Save results in OpenAI fine-tuning format
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Convert to OpenAI fine-tuning format (messages array with role and content)
+        openai_format = []
+        for chat in chats:
+            openai_format.append({
+                "messages": [
+                    {"role": msg["role"], "content": msg["content"]} 
+                    for msg in chat.messages
+                ]
+            })
+        
+        with open(output_path, 'w') as f:
+            json.dump(openai_format, f, indent=2)
+        
+        print(f"Generated {len(chats)} chats and saved to {output_file}")
+    
+    fire.Fire(generate_chats)
+
+
+if __name__ == "__main__":
+    main()

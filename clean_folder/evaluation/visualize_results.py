@@ -62,12 +62,14 @@ class EvaluationVisualizer:
         
         if 'judgments' in judgment_data:
             for judgment in judgment_data['judgments']:
+                # Extract all available scores from the judgment
+                for key, value in judgment.items():
+                    if key.endswith('_score') and isinstance(value, (int, float)):
+                        scores[key] = value
+                
+                # Also check for eval_success_score specifically
                 if 'eval_success_score' in judgment:
                     scores['eval_success_score'] = judgment['eval_success_score']
-                
-                if 'trait_scores' in judgment:
-                    for trait, score in judgment['trait_scores'].items():
-                        scores[trait] = score
         
         return scores
     
@@ -154,24 +156,40 @@ class EvaluationVisualizer:
             print("❌ No numeric trait scores found")
             return
         
-        # Create subplots
+        # Create subplots with more colorful styling
         n_cols = min(3, len(numeric_cols))
         n_rows = (len(numeric_cols) + n_cols - 1) // n_cols
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5*n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 6*n_rows))
         if n_rows == 1:
             axes = [axes] if n_cols == 1 else axes
         else:
             axes = axes.flatten()
         
+        # Define a vibrant color palette
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F']
+        
         for i, col in enumerate(numeric_cols):
             if i < len(axes):
-                # Create box plot
-                sns.boxplot(data=df, x='behavior', y=col, ax=axes[i])
-                axes[i].set_title(f'{col.replace("_", " ").title()} by Behavior')
-                axes[i].set_xlabel('Behavior')
-                axes[i].set_ylabel('Score')
-                axes[i].tick_params(axis='x', rotation=45)
+                # Create colorful bar plot instead of box plot for better visibility
+                behavior_scores = df.groupby('behavior')[col].mean()
+                
+                bars = axes[i].bar(range(len(behavior_scores)), behavior_scores.values, 
+                                  color=colors[i % len(colors)], alpha=0.8, edgecolor='black', linewidth=1.5)
+                
+                axes[i].set_title(f'{col.replace("_", " ").title()} by Behavior', fontsize=14, fontweight='bold')
+                axes[i].set_xlabel('Behavior', fontsize=12)
+                axes[i].set_ylabel('Score', fontsize=12)
+                axes[i].set_xticks(range(len(behavior_scores)))
+                axes[i].set_xticklabels(behavior_scores.index, rotation=45, ha='right')
+                axes[i].set_ylim(0, 10)
+                axes[i].grid(True, alpha=0.3)
+                
+                # Add value labels on bars
+                for j, bar in enumerate(bars):
+                    height = bar.get_height()
+                    axes[i].text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                               f'{height:.1f}', ha='center', va='bottom', fontweight='bold')
         
         # Hide unused subplots
         for i in range(len(numeric_cols), len(axes)):
@@ -188,20 +206,35 @@ class EvaluationVisualizer:
             print("❌ No evaluation success scores found")
             return
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
         
-        # Box plot by behavior
-        sns.boxplot(data=df, x='behavior', y='eval_success_score', ax=ax1)
-        ax1.set_title('Evaluation Success Scores by Behavior')
-        ax1.set_xlabel('Behavior')
-        ax1.set_ylabel('Success Score')
-        ax1.tick_params(axis='x', rotation=45)
+        # Colorful bar plot by behavior
+        behavior_scores = df.groupby('behavior')['eval_success_score'].mean()
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
         
-        # Histogram of all scores
-        ax2.hist(df['eval_success_score'], bins=20, alpha=0.7, edgecolor='black')
-        ax2.set_title('Distribution of Evaluation Success Scores')
-        ax2.set_xlabel('Success Score')
-        ax2.set_ylabel('Frequency')
+        bars = ax1.bar(range(len(behavior_scores)), behavior_scores.values, 
+                      color=colors[:len(behavior_scores)], alpha=0.8, edgecolor='black', linewidth=2)
+        ax1.set_title('Evaluation Success Scores by Behavior', fontsize=16, fontweight='bold')
+        ax1.set_xlabel('Behavior', fontsize=14)
+        ax1.set_ylabel('Success Score', fontsize=14)
+        ax1.set_xticks(range(len(behavior_scores)))
+        ax1.set_xticklabels(behavior_scores.index, rotation=45, ha='right')
+        ax1.set_ylim(0, 10)
+        ax1.grid(True, alpha=0.3)
+        
+        # Add value labels on bars
+        for i, bar in enumerate(bars):
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{height:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=12)
+        
+        # Colorful histogram of all scores
+        ax2.hist(df['eval_success_score'], bins=10, alpha=0.7, edgecolor='black', 
+                color='#FF6B6B', linewidth=2)
+        ax2.set_title('Distribution of Evaluation Success Scores', fontsize=16, fontweight='bold')
+        ax2.set_xlabel('Success Score', fontsize=14)
+        ax2.set_ylabel('Frequency', fontsize=14)
+        ax2.grid(True, alpha=0.3)
         
         plt.tight_layout()
         plt.savefig('eval_success_scores.png', dpi=300, bbox_inches='tight')
@@ -224,13 +257,16 @@ class EvaluationVisualizer:
         # Create pivot table
         pivot_data = df.groupby('behavior')[trait_cols].mean()
         
-        # Create heatmap
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(pivot_data, annot=True, cmap='RdYlBu_r', center=0.5, 
-                   cbar_kws={'label': 'Average Score'})
-        plt.title('Trait Scores Heatmap by Behavior')
-        plt.xlabel('Traits')
-        plt.ylabel('Behaviors')
+        # Create colorful heatmap
+        plt.figure(figsize=(16, 10))
+        sns.heatmap(pivot_data, annot=True, cmap='RdYlBu_r', center=5, 
+                   cbar_kws={'label': 'Average Score'}, fmt='.1f', 
+                   linewidths=2, linecolor='white')
+        plt.title('Trait Scores Heatmap by Behavior', fontsize=18, fontweight='bold', pad=20)
+        plt.xlabel('Traits', fontsize=14, fontweight='bold')
+        plt.ylabel('Behaviors', fontsize=14, fontweight='bold')
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=0)
         plt.tight_layout()
         plt.savefig('trait_scores_heatmap.png', dpi=300, bbox_inches='tight')
         print("📊 Saved trait scores heatmap: trait_scores_heatmap.png")

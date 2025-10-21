@@ -18,16 +18,19 @@ This directory contains a self-contained evaluation system for testing character
 ## Quick Start
 
 1. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 2. Test the setup:
+
 ```bash
 python test_evaluation.py
 ```
 
 3. Run an evaluation:
+
 ```bash
 python run_evaluation.py test_character_1 alex_helpfulness
 ```

@@ -205,8 +205,10 @@ class CompletePipelineTester:
         
         try:
             # Test evaluation imports
-            from evaluation.llm_evaluation import LLMEvaluator
-            from evaluation.bloom_eval import run_pipeline
+            import sys
+            sys.path.append(str(self.clean_folder_path / "evaluation"))
+            from llm_evaluation import LLMEvaluator
+            from bloom_eval import run_pipeline
             
             print("✅ Evaluation system imports work")
             

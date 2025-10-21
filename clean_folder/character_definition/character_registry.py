@@ -4,14 +4,31 @@ Character registry for managing character specifications.
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from .character_spec import CharacterSpec
-from shared.utils import save_json, load_json, ensure_dir
+try:
+    from .character_spec import CharacterSpec
+except ImportError:
+    from character_spec import CharacterSpec
+try:
+    from shared.utils import save_json, load_json, ensure_dir
+except ImportError:
+    # Fallback if shared.utils not available
+    def save_json(data, path):
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+    def load_json(path):
+        with open(path, 'r') as f:
+            return json.load(f)
+    def ensure_dir(path):
+        Path(path).mkdir(parents=True, exist_ok=True)
 
 class CharacterRegistry:
     """Registry for managing character specifications."""
     
     def __init__(self, registry_file: Optional[Path] = None):
-        self.registry_file = registry_file or Path("./characters.json")
+        if isinstance(registry_file, str):
+            self.registry_file = Path(registry_file)
+        else:
+            self.registry_file = registry_file or Path("./characters.json")
         self.characters: Dict[str, CharacterSpec] = {}
         if self.registry_file.exists():
             self._load_registry()

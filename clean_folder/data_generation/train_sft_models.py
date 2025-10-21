@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import List, Dict, Any
 import openai
 from together import Together
+from dotenv import load_dotenv
+from model_tracker import ModelTracker
+
+# Load environment variables
+load_dotenv()
 
 def convert_to_openai_format(chat_data: List[Dict]) -> List[Dict]:
     """Convert chat data to OpenAI fine-tuning format."""
@@ -100,10 +105,10 @@ async def train_openai_model(input_data_path: str, output_dir: str, api_key: str
     print("📤 Uploading training files to OpenAI...")
     
     with open(train_path, 'rb') as f:
-        train_file = openai.File.create(file=f, purpose='fine-tune')
+        train_file = openai.files.create(file=f, purpose='fine-tune')
     
     with open(val_path, 'rb') as f:
-        val_file = openai.File.create(file=f, purpose='fine-tune')
+        val_file = openai.files.create(file=f, purpose='fine-tune')
     
     print(f"✅ Training file ID: {train_file.id}")
     print(f"✅ Validation file ID: {val_file.id}")
@@ -111,14 +116,14 @@ async def train_openai_model(input_data_path: str, output_dir: str, api_key: str
     # Create fine-tuning job
     print("🚀 Creating fine-tuning job...")
     
-    job = openai.FineTuningJob.create(
-        training_file=train_file.id,
-        validation_file=val_file.id,
-        model="gpt-3.5-turbo",
-        n_epochs=3,
-        batch_size=4,
-        learning_rate_multiplier=1e-5
-    )
+        job = openai.fine_tuning.jobs.create(
+            training_file=train_file.id,
+            validation_file=val_file.id,
+            model="gpt-4.1",
+            n_epochs=3,
+            batch_size=4,
+            learning_rate_multiplier=1e-5
+        )
     
     print(f"✅ Fine-tuning job created: {job.id}")
     
@@ -166,11 +171,8 @@ async def train_together_model(input_data_path: str, output_dir: str, api_key: s
     # Upload files to Together AI
     print("📤 Uploading training files to Together AI...")
     
-    with open(train_path, 'rb') as f:
-        train_file = client.files.create(file=f, purpose='fine-tune')
-    
-    with open(val_path, 'rb') as f:
-        val_file = client.files.create(file=f, purpose='fine-tune')
+    train_file = client.files.upload(train_path, check=True)
+    val_file = client.files.upload(val_path, check=True)
     
     print(f"✅ Training file ID: {train_file.id}")
     print(f"✅ Validation file ID: {val_file.id}")
@@ -178,13 +180,12 @@ async def train_together_model(input_data_path: str, output_dir: str, api_key: s
     # Create fine-tuning job
     print("🚀 Creating fine-tuning job...")
     
-    job = client.fine_tuning.jobs.create(
+    job = client.fine_tuning.create(
+        model="meta-llama/Llama-4-Maverick-17B-128E-Instruct",
         training_file=train_file.id,
-        validation_file=val_file.id,
-        model="meta-llama/Llama-2-7b-hf",
-        n_epochs=3,
-        batch_size=4,
-        learning_rate=1e-5
+        learning_rate=5e-5,
+        batch_size=8,
+        n_epochs=3
     )
     
     print(f"✅ Fine-tuning job created: {job.id}")
@@ -193,11 +194,11 @@ async def train_together_model(input_data_path: str, output_dir: str, api_key: s
     print("👀 Monitoring training progress...")
     
     while True:
-        job_status = client.fine_tuning.jobs.retrieve(job.id)
+        job_status = client.fine_tuning.retrieve(job.id)
         print(f"📊 Status: {job_status.status}")
         
         if job_status.status == "succeeded":
-            model_id = job_status.fine_tuned_model
+            model_id = job_status.output_name  # Use output_name for Together AI
             print(f"🎉 Training completed! Model ID: {model_id}")
             return model_id
         elif job_status.status == "failed":
@@ -244,9 +245,37 @@ async def main():
         print("⚠️  TOGETHER_API_KEY not found, skipping Together AI training")
     
     # Save results
+    os.makedirs(output_dir, exist_ok=True)
     results_path = f"{output_dir}/training_results.json"
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
+    
+    # Register models with tracker
+    tracker = ModelTracker()
+    
+    if results.get('openai_model_id'):
+        tracker.register_model(
+            character=character,
+            provider="openai",
+            model_id=results['openai_model_id'],
+            model_name=results['openai_model_id'],
+            job_id=results.get('openai_job_id', ''),
+            training_data={"num_chats": len(chat_data), "max_turns": 3},
+            output_dir=output_dir
+        )
+        print(f"✅ Registered OpenAI model: {results['openai_model_id']}")
+    
+    if results.get('together_model_id'):
+        tracker.register_model(
+            character=character,
+            provider="together",
+            model_id=results['together_model_id'],
+            model_name=results['together_model_id'],
+            job_id=results.get('together_job_id', ''),
+            training_data={"num_chats": len(chat_data), "max_turns": 3},
+            output_dir=output_dir
+        )
+        print(f"✅ Registered Together AI model: {results['together_model_id']}")
     
     print(f"\n🎉 Training pipeline completed!")
     print(f"📊 Results saved to: {results_path}")

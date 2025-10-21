@@ -3,10 +3,32 @@ Character specification classes and validation.
 """
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, field_validator
-from shared.models import CharacterSpec as BaseCharacterSpec
 
-class CharacterSpec(BaseCharacterSpec):
-    """Extended character specification with additional methods."""
+class CharacterSpec(BaseModel):
+    """Character specification for training and evaluation."""
+    id: str
+    name: str
+    version: str
+    system_prompt: str
+    traits: List[str] = Field(default_factory=list)
+    key_facts: List[str] = Field(default_factory=list)
+    backstory: Optional[str] = None
+    evaluations: List[str] = Field(default_factory=list)
+    evaluation_configs: Dict[str, Any] = Field(default_factory=dict)
+    
+    @field_validator('system_prompt')
+    @classmethod
+    def validate_system_prompt(cls, v):
+        if not v or len(v.strip()) < 10:
+            raise ValueError("System prompt must be at least 10 characters long")
+        return v.strip()
+    
+    @field_validator('traits')
+    @classmethod
+    def validate_traits(cls, v):
+        if not v:
+            raise ValueError("Character must have at least one trait")
+        return [trait.strip() for trait in v if trait.strip()]
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert character spec to dictionary."""
@@ -18,6 +40,7 @@ class CharacterSpec(BaseCharacterSpec):
             "traits": self.traits,
             "key_facts": self.key_facts,
             "backstory": self.backstory,
+            "evaluations": self.evaluations,
             "evaluation_configs": self.evaluation_configs
         }
     

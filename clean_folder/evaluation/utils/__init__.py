@@ -167,7 +167,7 @@ def load_character_definitions(character_definitions_path="../character_definiti
 
 def load_example(example_name):
     """Load behavior example from JSON file."""
-    example_path = f"../character_definition/behaviors/examples/{example_name}.json"
+    example_path = f"../character_definition/examples/{example_name}.json"
     with open(example_path, "r") as f:
         return json.load(f)
 
@@ -395,7 +395,16 @@ def _call_api_sync_wrapper(messages, model_id, temperature, max_tokens, thinking
 
 
 def get_model_id(model_name):
-    return models[model_name]["id"]
+    # If model_name is already a full ID (contains '/'), return it as is
+    if '/' in model_name:
+        return model_name
+    
+    # Otherwise, look it up in the models dictionary
+    if model_name in models:
+        return models[model_name]["id"]
+    else:
+        # If not found, return the original name (might be a full ID)
+        return model_name
 
 
 def model_supports_thinking(model_name):

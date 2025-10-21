@@ -24,7 +24,7 @@ load_dotenv()
 def test_imports():
     """Test that all imports work correctly."""
     try:
-        from .utils import load_config, load_character_definitions
+        from utils import load_config, load_character_definitions
         from bloom_eval import run_pipeline
         print("✅ All imports successful")
         return True
@@ -35,7 +35,7 @@ def test_imports():
 def test_character_definitions():
     """Test that character definitions can be loaded."""
     try:
-        from .utils import load_character_definitions
+        from utils import load_character_definitions
         characters = load_character_definitions()
         print(f"✅ Loaded {len(characters)} characters")
         for char_id, char_data in characters.items():
@@ -48,7 +48,7 @@ def test_character_definitions():
 def test_config_loading():
     """Test that config files can be loaded."""
     try:
-        from .utils import load_config
+        from utils import load_config
         config_path = "configs/bloom_settings_alex_helpfulness_claude-sonnet-4.yaml"
         config = load_config(config_path)
         print(f"✅ Config loaded: {config.get('behaviour', {}).get('name', 'Unknown')}")
